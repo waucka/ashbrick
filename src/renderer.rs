@@ -49,10 +49,9 @@ impl Presenter {
 
     pub fn new(
         device: &Device,
-        render_pass: &RenderPass,
         desired_fps: u32,
     ) -> Result<Self> {
-        let swapchain = Swapchain::new(device.inner.clone(), render_pass)?;
+        let swapchain = Swapchain::new(device.inner.clone())?;
 
         let mut image_available_semaphores = vec![];
         let mut render_finished_semaphores = vec![];
@@ -110,10 +109,6 @@ impl Presenter {
         self.swapchain.as_ref().unwrap().swapchain_extent
     }
 
-    pub (crate) fn get_framebuffer(&self) -> vk::Framebuffer {
-        self.swapchain.as_ref().unwrap().framebuffer.framebuffer
-    }
-
     pub (crate) fn get_swapchain_image_view(&self, idx: usize) -> vk::ImageView {
         self.swapchain.as_ref().unwrap().frames[idx].imageview.view
     }
@@ -166,7 +161,7 @@ impl Presenter {
                 Ok(res) => res,
                 Err(vk_result) => match vk_result {
                     vk::Result::ERROR_OUT_OF_DATE_KHR => {
-                        self.fit_to_window(render_pass)?;
+                        self.fit_to_window()?;
                         let (width, height) = self.get_dimensions();
                         viewport_update(width, height)?;
                         // TODO: I hope I don't regret doing this.
@@ -198,7 +193,7 @@ impl Presenter {
     // Fuck that.  It looks like I can't avoid it for the pipeline, so I'll
     // have to figure out how to signal the engine to do that.
     // Same deal with the command buffers.
-    pub fn fit_to_window(&mut self, render_pass: &RenderPass) -> Result<()> {
+    pub fn fit_to_window(&mut self) -> Result<()> {
         unsafe {
             Error::wrap_result(
                 self.device.device
@@ -210,7 +205,6 @@ impl Presenter {
         self.swapchain = None;
         self.swapchain = Some(Swapchain::new(
             self.device.clone(),
-            render_pass,
         )?);
 
         Ok(())
@@ -228,7 +222,7 @@ impl Presenter {
         )
     }
 
-    pub fn present_frame<F>(&mut self, image_index: u32, render_pass: &RenderPass, viewport_update: &mut F) -> Result<()>
+    pub fn present_frame<F>(&mut self, image_index: u32, viewport_update: &mut F) -> Result<()>
     where
         F: FnMut(usize, usize) -> Result<()>
     {
@@ -258,7 +252,7 @@ impl Presenter {
         };
 
         if is_resized {
-            self.fit_to_window(render_pass)?;
+            self.fit_to_window()?;
             let (width, height) = self.get_dimensions();
             viewport_update(width, height)?;
         }
@@ -348,13 +342,11 @@ struct Swapchain {
     swapchain: vk::SwapchainKHR,
     pub (crate) swapchain_extent: vk::Extent2D,
     frames: Vec<FrameData>,
-    framebuffer: Framebuffer,
 }
 
 impl Swapchain {
     fn new(
         device: Rc<InnerDevice>,
-        render_pass: &RenderPass,
     ) -> Result<Self> {
         let swapchain_support = device.query_swapchain_support()?;
 
@@ -439,19 +431,11 @@ impl Swapchain {
             frame_index += 1;
         }
 
-        let framebuffer = Framebuffer::new(
-            device.clone(),
-            extent.width,
-            extent.height,
-            &render_pass,
-        )?;
-
         Ok(Self{
             device,
             swapchain,
             swapchain_extent: extent,
             frames,
-            framebuffer,
         })
     }
 
@@ -1540,7 +1524,21 @@ pub struct Framebuffer {
 }
 
 impl Framebuffer {
-    fn new(
+    pub fn new(
+        device: &Device,
+        width: u32,
+        height: u32,
+        render_pass: &RenderPass,
+    ) -> Result<Self> {
+        Self::new_internal(
+            Rc::clone(&device.inner),
+            width,
+            height,
+            render_pass,
+        )
+    }
+
+    fn new_internal(
         device: Rc<InnerDevice>,
         width: u32,
         height: u32,

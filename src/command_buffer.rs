@@ -7,7 +7,7 @@ use std::os::raw::c_void;
 
 use super::{Device, InnerDevice, Queue, FrameId, GraphicsResource};
 use super::descriptor::DescriptorSet;
-use super::renderer::{Presenter, RenderPass, Pipeline, AttachmentSet, SubpassRef};
+use super::renderer::{Presenter, RenderPass, Pipeline, AttachmentSet, SubpassRef, Framebuffer};
 use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer, Buffer};
 use super::image::Image;
 use super::shader::Vertex;
@@ -58,7 +58,7 @@ impl SecondaryCommandBuffer {
             render_pass: render_pass.render_pass,
             subpass: subpass.into(),
             // TODO: see if I can avoid doing this (might have negative effects on performance)
-            framebuffer: vk::Framebuffer::null(),//presenter.get_framebuffer(),
+            framebuffer: vk::Framebuffer::null(),
             occlusion_query_enable: vk::FALSE,
             query_flags: vk::QueryControlFlags::empty(),
             // TODO: make this configurable (e.g. debug on/off)
@@ -437,6 +437,7 @@ impl BufferWriter {
         &mut self,
         presenter: &Presenter,
         render_pass: &RenderPass,
+        framebuffer: &Framebuffer,
         frame: FrameId,
         clear_values: &[vk::ClearValue],
         attachment_set: &AttachmentSet,
@@ -477,7 +478,7 @@ impl BufferWriter {
             s_type: vk::StructureType::RENDER_PASS_BEGIN_INFO,
             p_next: (&attachment_info as *const _) as *const c_void,
             render_pass: render_pass.render_pass,
-            framebuffer: presenter.get_framebuffer(),
+            framebuffer: framebuffer.framebuffer,
             render_area,
             clear_value_count: clear_values.len() as u32,
             p_clear_values: clear_values.as_ptr(),
