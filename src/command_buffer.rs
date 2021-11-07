@@ -41,15 +41,15 @@ impl SecondaryCommandBuffer {
     }
 
     // TODO: should this be mut?
-    pub fn record<T, R>(
+    pub fn record<F, R, T>(
         &self,
         usage_flags: vk::CommandBufferUsageFlags,
-        render_pass: &RenderPass,
+        render_pass: &RenderPass<T>,
         subpass: SubpassRef,
-        write_fn: T,
+        write_fn: F,
     ) -> Result<R>
     where
-        T: FnMut(&mut BufferWriter) -> Result<R>
+        F: FnMut(&mut BufferWriter) -> Result<R>
     {
         let mut buf = self.buf.borrow_mut();
         let inheritance_info = vk::CommandBufferInheritanceInfo{
@@ -433,19 +433,19 @@ impl BufferWriter {
         Ok(result)
     }
 
-    pub fn begin_render_pass<T, R>(
+    pub fn begin_render_pass<F, R, T>(
         &mut self,
         presenter: &Presenter,
-        render_pass: &RenderPassData,
+        render_pass: &RenderPassData<T>,
         frame: FrameId,
         clear_values: &[vk::ClearValue],
-        attachment_set: &AttachmentSet,
+        attachment_set: &AttachmentSet<T>,
         swapchain_image_index: usize,
         first_subpass_uses_secondaries: bool,
-        mut write_fn: T,
+        mut write_fn: F,
     ) -> Result<R>
     where
-        T: FnMut(&mut RenderPassWriter) -> Result<R>
+        F: FnMut(&mut RenderPassWriter) -> Result<R>
     {
         if self.in_render_pass {
             panic!("begin_render_pass() called on a BufferWriter that is already in a render pass!");
@@ -677,9 +677,9 @@ pub struct RenderPassWriter {
 }
 
 impl RenderPassWriter {
-    pub fn bind_pipeline<V: Vertex + 'static>(
+    pub fn bind_pipeline<V: Vertex + 'static, T>(
         &mut self,
-        pipeline: Rc<Pipeline<V>>,
+        pipeline: Rc<Pipeline<V, T>>,
     ) {
         unsafe {
             self.device.device.cmd_bind_pipeline(

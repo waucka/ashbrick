@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::ptr;
 use std::os::raw::c_void;
 use std::pin::Pin;
+use std::marker::PhantomData;
 
 use super::{Device, InnerDevice, Queue, FrameId, PerFrameSet};
 use super::image::{Image, ImageView, ImageBuilder};
@@ -131,7 +132,7 @@ impl Presenter {
         Ok(self.last_frame.elapsed())
     }
 
-    pub fn acquire_next_image<F>(&mut self, render_pass: &RenderPass, viewport_update: &mut F) -> Result<u32>
+    pub fn acquire_next_image<F, T>(&mut self, render_pass: &RenderPass<T>, viewport_update: &mut F) -> Result<u32>
     where
         F: FnMut(usize, usize) -> Result<()>
     {
@@ -477,9 +478,10 @@ impl PipelineParameters {
     }
 }
 
-pub struct Pipeline<V>
+pub struct Pipeline<V, T>
 where
     V: Vertex,
+    T: 'static,
 {
     device: Rc<InnerDevice>,
     pipeline_layout: vk::PipelineLayout,
@@ -487,11 +489,12 @@ where
     vert_shader: VertexShader<V>,
     frag_shader: FragmentShader,
     params: PipelineParameters,
+    _type: PhantomData<T>,
 }
 
-impl<V: Vertex> super::GraphicsResource for Pipeline<V> {}
+impl<V: Vertex, T> super::GraphicsResource for Pipeline<V, T> {}
 
-impl<V> Pipeline<V>
+impl<V, T> Pipeline<V, T>
 where
     V: Vertex,
 {
@@ -499,7 +502,7 @@ where
         device: Rc<InnerDevice>,
         viewport_width: usize,
         viewport_height: usize,
-        render_pass: &RenderPass,
+        render_pass: &RenderPass<T>,
         vert_shader: VertexShader<V>,
         frag_shader: FragmentShader,
         set_layouts: &[&DescriptorSetLayout],
@@ -561,6 +564,7 @@ where
             vert_shader,
             frag_shader,
             params,
+            _type: PhantomData,
         })
     }
 
@@ -568,7 +572,7 @@ where
         device: &Device,
         viewport_width: usize,
         viewport_height: usize,
-        render_pass: &RenderPass,
+        render_pass: &RenderPass<T>,
         vert_shader: VertexShader<V>,
         frag_shader: FragmentShader,
         set_layouts: &[&DescriptorSetLayout],
@@ -791,7 +795,7 @@ where
         &self,
         viewport_width: usize,
         viewport_height: usize,
-        render_pass: &RenderPass,
+        render_pass: &RenderPass<T>,
     ) -> Result<()> {
         let vert_shader_module = self.vert_shader.get_shader().shader;
         let frag_shader_module = self.frag_shader.get_shader().shader;
@@ -818,7 +822,7 @@ where
     }
 }
 
-impl<V> Drop for Pipeline<V>
+impl<V, T> Drop for Pipeline<V, T>
 where
     V: Vertex,
 {
@@ -1119,18 +1123,22 @@ impl Subpass {
     }
 }
 
-pub struct AttachmentInfoSet {
+// The purpose of the type parameter is to prevent render passes that
+// might not be compatible from being interchanged.
+pub struct AttachmentInfoSet<T> {
     infos: Vec<vk::FramebufferAttachmentImageInfo>,
+    _type: PhantomData<T>,
 }
 
-impl AttachmentInfoSet {
+impl<T> AttachmentInfoSet<T> {
     pub fn new(infos: Vec<vk::FramebufferAttachmentImageInfo>) -> Self {
         Self{
             infos,
+            _type: PhantomData,
         }
     }
 
-    pub fn check_attachments(&self, set: &AttachmentSet) -> bool {
+    pub fn check_attachments(&self, set: &AttachmentSet<T>) -> bool {
         if set.attachments.len() != self.infos.len() {
             return false;
         }
@@ -1158,13 +1166,16 @@ impl AttachmentInfoSet {
     }
 }
 
-pub struct AttachmentSet {
+// The purpose of the type parameter is to prevent render passes that
+// might not be compatible from being interchanged.
+pub struct AttachmentSet<T> {
     attachments: Vec<PerFrameSet<Rc<Texture>>>,
+    _type: PhantomData<T>
 }
 
-impl AttachmentSet {
+impl<T> AttachmentSet<T> {
     pub fn for_renderpass(
-        render_pass: &RenderPass,
+        render_pass: &RenderPass<T>,
         width: usize,
         height: usize,
         msaa_samples: vk::SampleCountFlags,
@@ -1176,6 +1187,7 @@ impl AttachmentSet {
                 height,
                 msaa_samples,
             )?,
+            _type: PhantomData,
         })
     }
 
@@ -1194,7 +1206,7 @@ impl AttachmentSet {
     }
 
     fn create_attachment_textures(
-        render_pass: &RenderPass,
+        render_pass: &RenderPass<T>,
         width: usize,
         height: usize,
         msaa_samples: vk::SampleCountFlags,
@@ -1226,7 +1238,7 @@ impl AttachmentSet {
 
     pub fn resize(
         &mut self,
-        render_pass: &RenderPass,
+        render_pass: &RenderPass<T>,
         width: usize,
         height: usize,
         msaa_samples: vk::SampleCountFlags,
@@ -1365,13 +1377,24 @@ impl RenderPassBuilder {
     }
 }
 
-pub struct RenderPass {
+// The type parameter is used to allow the creation function to receive
+// user-defined data.
+pub trait RenderPassFactory<D> {
+    type Output;
+
+    fn create_render_pass(&self, data: Option<D>) -> RenderPass<Self::Output>;
+}
+
+// The purpose of the type parameter is to prevent render passes that
+// might not be compatible from being interchanged.
+pub struct RenderPass<T: 'static> {
     device: Rc<InnerDevice>,
     pub (crate) render_pass: vk::RenderPass,
     attachments: Vec<AttachmentDescription>,
+    _type: PhantomData<T>,
 }
 
-impl RenderPass {
+impl<T: 'static> RenderPass<T> {
     pub fn new(
         device: &Device,
         msaa_samples: vk::SampleCountFlags,
@@ -1419,6 +1442,7 @@ impl RenderPass {
                     "Failed to create render pass",
                 )?,
                 attachments,
+                _type: PhantomData,
             })
         }
     }
@@ -1460,7 +1484,7 @@ impl RenderPass {
         })
     }
 
-    fn get_attachment_infos(&self, width: u32, height: u32) -> (Vec<Pin<Vec<vk::Format>>>, AttachmentInfoSet) {
+    fn get_attachment_infos(&self, width: u32, height: u32) -> (Vec<Pin<Vec<vk::Format>>>, AttachmentInfoSet<T>) {
         let mut image_infos = vec![];
         let mut formats = vec![];
         for att in self.attachments.iter() {
@@ -1482,7 +1506,7 @@ impl RenderPass {
     }
 }
 
-impl Drop for RenderPass {
+impl<T> Drop for RenderPass<T> {
     fn drop(&mut self) {
         unsafe {
             self.device.device.destroy_render_pass(self.render_pass, None);
@@ -1503,19 +1527,19 @@ impl Drop for Framebuffer {
     }
 }
 
-pub struct RenderPassData {
-    pub (crate) render_pass: RenderPass,
+pub struct RenderPassData<T: 'static> {
+    pub (crate) render_pass: RenderPass<T>,
     pub (crate) framebuffer: Framebuffer,
 }
 
-impl RenderPassData {
+impl<T> RenderPassData<T> {
     pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
         let new_framebuffer = self.render_pass.create_framebuffer(width, height)?;
         self.framebuffer = new_framebuffer;
         Ok(())
     }
 
-    pub fn get_render_pass(&self) -> &RenderPass {
+    pub fn get_render_pass(&self) -> &RenderPass<T> {
         &self.render_pass
     }
 
