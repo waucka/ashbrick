@@ -4,6 +4,7 @@ use defaulted::Defaulted;
 
 pub use ash;
 pub use winit;
+pub use crevice;
 #[cfg(feature = "egui")]
 pub use egui;
 
