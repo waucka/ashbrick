@@ -1,5 +1,5 @@
 use ash::vk;
-use image::{GenericImageView, DynamicImage};
+use image::GenericImageView;
 
 #[cfg(feature = "egui")]
 use std::sync::Arc;
@@ -309,6 +309,16 @@ impl Texture {
         format!("{:?}", self.image.img)
     }
 
+    pub fn from_bytes(device: &Device, name: &str, bytes: &[u8], srgb: bool, mipmapped: bool) -> Result<Self> {
+        let start = std::time::Instant::now();
+        let image_object = match image::load_from_memory(bytes) {
+            Ok(v) => v,
+            Err(e) => return Err(Error::external(e, &format!("Failed to load image from {} bytes", bytes.len()))),
+        };
+        println!("Loaded {} bytes in {}ms", bytes.len(), start.elapsed().as_millis());
+        Self::from_image(device, name, &image_object, srgb, mipmapped)
+    }
+
     pub fn from_file(device: &Device, name: &str, image_path: &Path, srgb: bool, mipmapped: bool) -> Result<Self> {
         let start = std::time::Instant::now();
         let image_object = match image::open(image_path) {
@@ -316,22 +326,59 @@ impl Texture {
             Err(e) => return Err(Error::external(e, &format!("Failed to load image {}", image_path.display()))),
         };
         println!("Loaded {} in {}ms", image_path.display(), start.elapsed().as_millis());
-        Self::from_image(device, name, image_object, srgb, mipmapped)
+        Self::from_image(device, name, &image_object, srgb, mipmapped)
     }
 
-    pub fn from_image(device: &Device, name: &str, image_object: DynamicImage, srgb: bool, mipmapped: bool) -> Result<Self> {
-        let (image_width, image_height) = (image_object.width(), image_object.height());
-        let image_size =
-            (std::mem::size_of::<u8>() as u32 * image_width * image_height * 4) as vk::DeviceSize;
-        let image_data = match &image_object {
-            DynamicImage::ImageLuma8(_) |
-            DynamicImage::ImageBgr8(_) |
-            DynamicImage::ImageRgb8(_) |
-            DynamicImage::ImageLumaA8(_) |
-            DynamicImage::ImageBgra8(_) |
-            DynamicImage::ImageRgba8(_) => image_object.to_rgba8().into_raw(),
-            _ => panic!("Unsupported image type (probably 16 bits per channel)"),
+    pub fn from_image(device: &Device, name: &str, image_object: &image::DynamicImage, srgb: bool, mipmapped: bool) -> Result<Self> {
+        use image::DynamicImage::*;
+        use image::buffer::ConvertBuffer;
+        match image_object {
+            ImageRgb8(img) => {
+                let image_object = ImageRgba8(img.convert());
+                Self::from_image_internal(device, name, &image_object, srgb, mipmapped)
+            },
+            ImageRgb16(img) => {
+                let image_object = ImageRgba16(img.convert());
+                Self::from_image_internal(device, name, &image_object, srgb, mipmapped)
+            },
+            ImageBgr8(img) => {
+                let image_object = ImageRgba8(img.convert());
+                Self::from_image_internal(device, name, &image_object, srgb, mipmapped)
+            },
+            image_object => Self::from_image_internal(device, name, image_object, srgb, mipmapped),
+        }
+    }
+
+    fn from_image_internal(device: &Device, name: &str, image_object: &image::DynamicImage, srgb: bool, mipmapped: bool) -> Result<Self> {
+        use image::DynamicImage::*;
+        let (bytes_per_channel, channels_per_pixel, format) = match &image_object {
+            ImageLuma8(_) => (1, 1, if srgb { vk::Format::R8_SNORM } else { vk::Format::R8_UNORM }),
+            ImageLumaA8(_) => (1, 2, if srgb { vk::Format::R8G8_SNORM } else { vk::Format::R8G8_UNORM }),
+            ImageRgba8(_) => (1, 4, if srgb { vk::Format::R8G8B8A8_SNORM } else { vk::Format::R8G8B8A8_UNORM }),
+            ImageBgra8(_) => (1, 4, if srgb { vk::Format::R8G8B8A8_SNORM } else { vk::Format::R8G8B8A8_UNORM }),
+            ImageLuma16(_) => (2, 1, if srgb { vk::Format::R16_SNORM } else { vk::Format::R16_UNORM }),
+            ImageLumaA16(_) => (2, 2, if srgb { vk::Format::R16G16_SNORM } else { vk::Format::R16G16_UNORM }),
+            ImageRgba16(_) => (2, 4, if srgb { vk::Format::R16G16B16A16_SNORM } else { vk::Format::R16G16B16A16_UNORM }),
+            ImageRgb8(_) | ImageRgb16(_) | ImageBgr8(_) => return Err(Error::internal("Bad image passed to from_image_internal")),
         };
+        let (width, height) = (image_object.width(), image_object.height());
+
+        let image_data = ImageData{
+            data: image_object.as_bytes(),
+            bytes_per_channel,
+            channels_per_pixel,
+            width,
+            height,
+        };
+
+        Self::from_image_data(device, name, &image_data, format, mipmapped)
+    }
+
+    pub fn from_image_data(device: &Device, name: &str, image_data: &ImageData, format: vk::Format, mipmapped: bool) -> Result<Self> {
+        let (image_width, image_height) = (image_data.width, image_data.height);
+        let size_of_pixel = image_data.bytes_per_channel * image_data.channels_per_pixel;
+        let image_size =
+            (std::mem::size_of::<u8>() as u32 * image_width * image_height * size_of_pixel) as vk::DeviceSize;
         let mip_levels = if mipmapped {
             ((max(image_width, image_height) as f32)
              .log2()
@@ -341,11 +388,11 @@ impl Texture {
         };
 
         if image_size == 0 {
-            panic!("Failed to load texture image");
+            panic!("Invalid image size");
         }
 
         let upload_buffer = UploadSourceBuffer::new(device, "temp-upload-source-buffer", image_size)?;
-        upload_buffer.copy_data(&image_data)?;
+        upload_buffer.copy_data(image_data.data)?;
 
         let mut image = Image::new(
             device,
@@ -356,11 +403,7 @@ impl Texture {
             }
             .with_mip_levels(mip_levels)
                 .with_num_samples(vk::SampleCountFlags::TYPE_1)
-                .with_format(if srgb {
-                    vk::Format::R8G8B8A8_SRGB
-                } else {
-                    vk::Format::R8G8B8A8_UNORM
-                })
+                .with_format(format)
                 .with_tiling(vk::ImageTiling::OPTIMAL)
                 .with_usage(
                     vk::ImageUsageFlags::TRANSFER_SRC |
@@ -425,6 +468,14 @@ impl Texture {
     pub fn get_extent(&self) -> vk::Extent3D {
         self.image.extent
     }
+}
+
+pub struct ImageData<'a> {
+    pub data: &'a [u8],
+    pub bytes_per_channel: u32,
+    pub channels_per_pixel: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 pub struct Sampler {
