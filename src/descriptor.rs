@@ -325,7 +325,7 @@ impl DescriptorBindings {
 #[derive(Debug)]
 pub struct DescriptorSetLayout {
     device: Rc<InnerDevice>,
-    pub (in super) layout: vk::DescriptorSetLayout,
+    pub (crate) layout: vk::DescriptorSetLayout,
     bindings: DescriptorBindings,
 }
 
@@ -582,7 +582,7 @@ impl Drop for DescriptorPool {
 
 pub struct DescriptorSet {
     device: Rc<InnerDevice>,
-    pub (in super) inner: vk::DescriptorSet,
+    pub (crate) inner: vk::DescriptorSet,
     dependencies: RefCell<Vec<Rc<dyn DescriptorRef>>>,
 }
 

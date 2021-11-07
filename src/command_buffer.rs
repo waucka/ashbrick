@@ -102,7 +102,7 @@ impl CommandPool {
         )
     }
 
-    pub (in super) fn from_inner(
+    pub (crate) fn from_inner(
         device: Rc<InnerDevice>,
         queue: Rc<Queue>,
         can_reset: bool,
@@ -368,7 +368,7 @@ impl CommandBuffer {
         CommandBuffer::run_oneshot_internal(device.inner.clone(), pool, cmd_fn)
     }
 
-    pub (in super) fn run_oneshot_internal<T>(
+    pub (crate) fn run_oneshot_internal<T>(
         device: Rc<InnerDevice>,
         pool: Rc<CommandPool>,
         cmd_fn: T,
@@ -583,7 +583,7 @@ impl BufferWriter {
         self.dependencies.push(image);
     }
 
-    pub (in super) unsafe fn copy_buffer_to_image_no_deps(
+    pub (crate) unsafe fn copy_buffer_to_image_no_deps(
         &mut self,
         src_buffer: &UploadSourceBuffer,
         image: &Image,
@@ -637,7 +637,7 @@ impl BufferWriter {
     }
 
     // Dependencies are not recorded.  Use this only in cases where you have no choice!
-    pub (in super) unsafe fn blit_image_no_deps(
+    pub (crate) unsafe fn blit_image_no_deps(
         &mut self,
         img_src: &Image,
         layout_src: vk::ImageLayout,

@@ -164,8 +164,18 @@ impl<T> PerFrameSet<T> {
         Ok(new_set)
     }
 
-    #[allow(unused)]
-    pub fn foreach<F>(&mut self, mut action: F) -> Result<()>
+    pub fn foreach<F>(&self, mut action: F) -> Result<()>
+    where
+        F: FnMut(FrameId, &T) -> Result<()>
+    {
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
+            let item = &self.items[i];
+            action(FrameId::from(i), item)?;
+        }
+        Ok(())
+    }
+
+    pub fn foreach_mut<F>(&mut self, mut action: F) -> Result<()>
     where
         F: FnMut(FrameId, &mut T) -> Result<()>
     {

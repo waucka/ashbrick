@@ -15,8 +15,8 @@ use super::buffer::UploadSourceBuffer;
 use super::errors::{Error, Result};
 
 pub struct Texture {
-    pub (in super) image: Rc<Image>,
-    pub (in super) image_view: Rc<ImageView>,
+    pub (crate) image: Rc<Image>,
+    pub (crate) image_view: Rc<ImageView>,
     mip_levels: u32,
 }
 
@@ -282,7 +282,7 @@ impl Texture {
         )
     }
 
-    pub (in super) fn from_image_builder_internal(
+    pub (crate) fn from_image_builder_internal(
         device: Rc<InnerDevice>,
         aspect: vk::ImageAspectFlags,
         mip_levels: u32,
@@ -414,7 +414,6 @@ impl Texture {
         self.mip_levels
     }
 
-    #[allow(unused)]
     pub fn get_descriptor_info(&self, sampler: &Sampler) -> vk::DescriptorImageInfo {
         vk::DescriptorImageInfo{
             sampler: sampler.sampler,
@@ -422,11 +421,15 @@ impl Texture {
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
         }
     }
+
+    pub fn get_extent(&self) -> vk::Extent3D {
+        self.image.extent
+    }
 }
 
 pub struct Sampler {
     device: Rc<InnerDevice>,
-    pub (in super) sampler: vk::Sampler,
+    pub (crate) sampler: vk::Sampler,
 }
 
 impl Sampler {

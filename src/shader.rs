@@ -8,13 +8,13 @@ use super::{Device, InnerDevice};
 
 use super::errors::{Error, Result};
 
-pub (in super) trait GenericShader {
+pub (crate) trait GenericShader {
     fn get_shader(&self) -> &Shader;
 }
 
 pub struct Shader {
     device: Rc<InnerDevice>,
-    pub (in super) shader: vk::ShaderModule,
+    pub (crate) shader: vk::ShaderModule,
 }
 
 impl Shader {

@@ -54,7 +54,7 @@ impl<T> MemoryMapping<T> {
 
 pub struct Buffer {
     device: Rc<InnerDevice>,
-    pub (in super) buf: vk::Buffer,
+    pub (crate) buf: vk::Buffer,
     allocation: gpu_allocator::vulkan::Allocation,
     size: vk::DeviceSize,
 }

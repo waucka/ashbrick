@@ -110,11 +110,11 @@ impl Presenter {
         self.swapchain.as_ref().unwrap().swapchain_extent
     }
 
-    pub (in super) fn get_framebuffer(&self) -> vk::Framebuffer {
+    pub (crate) fn get_framebuffer(&self) -> vk::Framebuffer {
         self.swapchain.as_ref().unwrap().framebuffer.framebuffer
     }
 
-    pub (in super) fn get_swapchain_image_view(&self, idx: usize) -> vk::ImageView {
+    pub (crate) fn get_swapchain_image_view(&self, idx: usize) -> vk::ImageView {
         self.swapchain.as_ref().unwrap().frames[idx].imageview.view
     }
 
@@ -346,7 +346,7 @@ struct FrameData {
 struct Swapchain {
     device: Rc<InnerDevice>,
     swapchain: vk::SwapchainKHR,
-    pub (in super) swapchain_extent: vk::Extent2D,
+    pub (crate) swapchain_extent: vk::Extent2D,
     frames: Vec<FrameData>,
     framebuffer: Framebuffer,
 }
@@ -564,7 +564,7 @@ where
 {
     device: Rc<InnerDevice>,
     pipeline_layout: vk::PipelineLayout,
-    pub (in super) pipeline: RefCell<vk::Pipeline>,
+    pub (crate) pipeline: RefCell<vk::Pipeline>,
     vert_shader: VertexShader<V>,
     frag_shader: FragmentShader,
     params: PipelineParameters,
@@ -894,7 +894,7 @@ where
         self.pipeline_layout
     }
 
-    pub (in super) fn get_vk(&self) -> vk::Pipeline {
+    pub (crate) fn get_vk(&self) -> vk::Pipeline {
         *self.pipeline.borrow()
     }
 }
@@ -1200,6 +1200,45 @@ impl Subpass {
     }
 }
 
+pub struct AttachmentInfoSet {
+    infos: Vec<vk::FramebufferAttachmentImageInfo>,
+}
+
+impl AttachmentInfoSet {
+    pub fn new(infos: Vec<vk::FramebufferAttachmentImageInfo>) -> Self {
+        Self{
+            infos,
+        }
+    }
+
+    pub fn check_attachments(&self, set: &AttachmentSet) -> bool {
+        if set.attachments.len() != self.infos.len() {
+            return false;
+        }
+
+        for (i, info) in self.infos.iter().enumerate() {
+            let att = &set.attachments[i];
+            let mut ok = true;
+            att.foreach(|_, tex| {
+                let size = tex.get_extent();
+                if size.depth != 1 {
+                    ok = false;
+                    return Ok(());
+                }
+                if size.width != info.width || size.height != info.height {
+                    ok = false;
+                    return Ok(());
+                }
+                Ok(())
+            }).unwrap();
+            if !ok {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 pub struct AttachmentSet {
     attachments: Vec<PerFrameSet<Rc<Texture>>>,
 }
@@ -1227,7 +1266,7 @@ impl AttachmentSet {
         self.attachments[att_ref.idx - 1].get(frame).clone()
     }
 
-    pub (in super) fn get_image_views(&self, frame: FrameId) -> Vec<vk::ImageView> {
+    pub (crate) fn get_image_views(&self, frame: FrameId) -> Vec<vk::ImageView> {
         let mut image_views = Vec::new();
         for att in self.attachments.iter() {
             image_views.push(att.get(frame).image_view.view);
@@ -1409,7 +1448,7 @@ impl RenderPassBuilder {
 
 pub struct RenderPass {
     device: Rc<InnerDevice>,
-    pub (in super) render_pass: vk::RenderPass,
+    pub (crate) render_pass: vk::RenderPass,
     attachments: Vec<AttachmentDescription>,
 }
 
@@ -1465,7 +1504,7 @@ impl RenderPass {
         }
     }
 
-    fn get_attachment_infos(&self, width: u32, height: u32) -> (Vec<Pin<Vec<vk::Format>>>, Vec<vk::FramebufferAttachmentImageInfo>) {
+    fn get_attachment_infos(&self, width: u32, height: u32) -> (Vec<Pin<Vec<vk::Format>>>, AttachmentInfoSet) {
         let mut image_infos = vec![];
         let mut formats = vec![];
         for att in self.attachments.iter() {
@@ -1483,7 +1522,7 @@ impl RenderPass {
             });
             formats.push(view_formats);
         }
-        (formats, image_infos)
+        (formats, AttachmentInfoSet::new(image_infos))
     }
 }
 
@@ -1497,7 +1536,7 @@ impl Drop for RenderPass {
 
 pub struct Framebuffer {
     device: Rc<InnerDevice>,
-    pub (in super) framebuffer: vk::Framebuffer,
+    pub (crate) framebuffer: vk::Framebuffer,
 }
 
 impl Framebuffer {
@@ -1507,12 +1546,12 @@ impl Framebuffer {
         height: u32,
         render_pass: &RenderPass,
     ) -> Result<Self> {
-        let (_formats, attachment_image_infos) = render_pass.get_attachment_infos(width, height);
+        let (_, attachment_image_infos) = render_pass.get_attachment_infos(width, height);
         let attachments_info = vk::FramebufferAttachmentsCreateInfo{
             s_type: vk::StructureType::FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
             p_next: ptr::null(),
-            attachment_image_info_count: attachment_image_infos.len() as u32,
-            p_attachment_image_infos: attachment_image_infos.as_ptr(),
+            attachment_image_info_count: attachment_image_infos.infos.len() as u32,
+            p_attachment_image_infos: attachment_image_infos.infos.as_ptr(),
         };
 
         let framebuffer_create_info = vk::FramebufferCreateInfo{

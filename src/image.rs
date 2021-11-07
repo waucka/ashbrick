@@ -67,12 +67,12 @@ impl ImageBuilder {
 
 pub struct Image {
     device: Rc<InnerDevice>,
-    pub (in super) img: vk::Image,
+    pub (crate) img: vk::Image,
     allocation: Option<gpu_allocator::vulkan::Allocation>,
-    pub (in super) extent: vk::Extent3D,
-    pub (in super) format: vk::Format,
+    pub (crate) extent: vk::Extent3D,
+    pub (crate) format: vk::Format,
     image_type: vk::ImageType,
-    pub (in super) layout: vk::ImageLayout,
+    pub (crate) layout: vk::ImageLayout,
 }
 
 impl Image {
@@ -80,7 +80,7 @@ impl Image {
         Image::new_internal(device.inner.clone(), builder)
     }
 
-    pub (in super) fn from_vk_image(
+    pub (crate) fn from_vk_image(
         device: Rc<InnerDevice>,
         image: vk::Image,
         extent: vk::Extent3D,
@@ -98,7 +98,7 @@ impl Image {
         }
     }
 
-    pub (in super) fn new_internal(
+    pub (crate) fn new_internal(
         device: Rc<InnerDevice>,
         builder: ImageBuilder,
     ) -> Result<Self> {
@@ -403,7 +403,7 @@ impl Image {
             })
     }
 
-    pub (in super) unsafe fn copy_buffer_no_deps(
+    pub (crate) unsafe fn copy_buffer_no_deps(
         buffer: &UploadSourceBuffer,
         dst_img: &Image,
     ) -> Result<()> {
@@ -438,7 +438,7 @@ impl super::GraphicsResource for Image {}
 
 pub struct ImageView {
     device: Rc<InnerDevice>,
-    pub (in super) view: vk::ImageView,
+    pub (crate) view: vk::ImageView,
 }
 
 impl ImageView {
