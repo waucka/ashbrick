@@ -33,20 +33,6 @@ pub struct Presenter {
 }
 
 impl Presenter {
-    pub fn get_swapchain_image_formats(device: &Device) -> Result<(vk::Format, vk::Format)> {
-        let swapchain_support = super::utils::query_swapchain_support(
-            device.inner.physical_device,
-            &device.inner.surface_loader,
-            device.inner.surface,
-        )?;
-        let surface_format = choose_swapchain_format(&swapchain_support.formats);
-        let depth_format = super::utils::find_depth_format(
-            &device.inner.instance,
-            device.inner.physical_device,
-        )?;
-        Ok((surface_format.format, depth_format))
-    }
-
     pub fn new(
         device: &Device,
         desired_fps: u32,
@@ -280,57 +266,6 @@ impl Drop for Presenter {
     }
 }
 
-pub fn choose_swapchain_format(
-    available_formats: &Vec<vk::SurfaceFormatKHR>,
-) -> vk::SurfaceFormatKHR {
-    for &available_format in available_formats.iter() {
-        if available_format.format == vk::Format::B8G8R8A8_SRGB
-            && available_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR {
-                return available_format.clone();
-            }
-    }
-
-    available_formats.first().unwrap().clone()
-}
-
-pub fn choose_swapchain_present_mode(
-    available_present_modes: &Vec<vk::PresentModeKHR>,
-) -> vk::PresentModeKHR {
-    for &available_present_mode in available_present_modes.iter() {
-        if available_present_mode == vk::PresentModeKHR::MAILBOX {
-            return available_present_mode;
-        }
-    }
-
-    vk::PresentModeKHR::FIFO
-}
-
-fn choose_swapchain_extent(
-    device: Rc<InnerDevice>,
-    capabilities: &vk::SurfaceCapabilitiesKHR,
-) -> vk::Extent2D {
-    if capabilities.current_extent.width != u32::max_value() {
-        capabilities.current_extent
-    } else {
-        use num::clamp;
-
-        let window_size = device.window.inner_size();
-
-        vk::Extent2D{
-            width: clamp(
-                window_size.width,
-                capabilities.min_image_extent.width,
-                capabilities.max_image_extent.width,
-            ),
-            height: clamp(
-                window_size.height,
-                capabilities.min_image_extent.height,
-                capabilities.max_image_extent.height,
-            ),
-        }
-    }
-}
-
 struct FrameData {
     _frame_index: u32,
     _image: Image,
@@ -350,9 +285,9 @@ impl Swapchain {
     ) -> Result<Self> {
         let swapchain_support = device.query_swapchain_support()?;
 
-        let surface_format = choose_swapchain_format(&swapchain_support.formats);
-        let present_mode = choose_swapchain_present_mode(&swapchain_support.present_modes);
-        let extent = choose_swapchain_extent(device.clone(), &swapchain_support.capabilities);
+        let surface_format = super::utils::choose_swapchain_format(&swapchain_support.formats);
+        let present_mode = super::utils::choose_swapchain_present_mode(&swapchain_support.present_modes);
+        let extent = device.choose_swapchain_extent(&swapchain_support.capabilities);
 
         let image_count = swapchain_support.capabilities.min_image_count + 1;
         let image_count = if swapchain_support.capabilities.max_image_count > 0 {

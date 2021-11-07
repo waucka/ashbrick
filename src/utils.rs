@@ -409,3 +409,29 @@ pub fn create_allocator(
         Err(e) => Err(Error::AllocationError(e)),
     }
 }
+
+
+pub fn choose_swapchain_format(
+    available_formats: &Vec<vk::SurfaceFormatKHR>,
+) -> vk::SurfaceFormatKHR {
+    for &available_format in available_formats.iter() {
+        if available_format.format == vk::Format::B8G8R8A8_SRGB
+            && available_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR {
+                return available_format.clone();
+            }
+    }
+
+    available_formats.first().unwrap().clone()
+}
+
+pub fn choose_swapchain_present_mode(
+    available_present_modes: &Vec<vk::PresentModeKHR>,
+) -> vk::PresentModeKHR {
+    for &available_present_mode in available_present_modes.iter() {
+        if available_present_mode == vk::PresentModeKHR::MAILBOX {
+            return available_present_mode;
+        }
+    }
+
+    vk::PresentModeKHR::FIFO
+}

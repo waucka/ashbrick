@@ -479,6 +479,20 @@ impl Device {
         }
         Err(Error::Generic("Failed to find a suitable float target format".to_owned()))
     }
+
+    pub fn get_swapchain_image_formats(&self) -> Result<(vk::Format, vk::Format)> {
+        let swapchain_support = utils::query_swapchain_support(
+            self.inner.physical_device,
+            &self.inner.surface_loader,
+            self.inner.surface,
+        )?;
+        let surface_format = utils::choose_swapchain_format(&swapchain_support.formats);
+        let depth_format = utils::find_depth_format(
+            &self.inner.instance,
+            self.inner.physical_device,
+        )?;
+        Ok((surface_format.format, depth_format))
+    }
 }
 
 pub enum MemoryUsage {
@@ -666,6 +680,32 @@ impl InnerDevice {
         }
 
         Ok(this)
+    }
+
+    fn choose_swapchain_extent(
+        &self,
+        capabilities: &vk::SurfaceCapabilitiesKHR,
+    ) -> vk::Extent2D {
+        if capabilities.current_extent.width != u32::max_value() {
+            capabilities.current_extent
+        } else {
+            use num::clamp;
+
+            let window_size = self.window.inner_size();
+
+            vk::Extent2D{
+                width: clamp(
+                    window_size.width,
+                    capabilities.min_image_extent.width,
+                    capabilities.max_image_extent.width,
+                ),
+                height: clamp(
+                    window_size.height,
+                    capabilities.min_image_extent.height,
+                    capabilities.max_image_extent.height,
+                ),
+            }
+        }
     }
 
     fn create_buffer(
