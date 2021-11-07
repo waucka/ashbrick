@@ -1,5 +1,4 @@
 use ash::vk;
-use defaulted::Defaulted;
 
 use std::rc::Rc;
 use std::ptr;
@@ -14,15 +13,15 @@ use super::errors::{Error, Result};
 #[derive(Clone)]
 pub struct ImageBuilder {
     name: String,
-    size: Defaulted<Vec<u32>>,
-    image_type: Defaulted<vk::ImageType>,
-    mip_levels: Defaulted<u32>,
-    num_samples: Defaulted<vk::SampleCountFlags>,
-    format: Defaulted<vk::Format>,
-    tiling: Defaulted<vk::ImageTiling>,
-    usage: Defaulted<vk::ImageUsageFlags>,
-    required_memory_properties: Defaulted<vk::MemoryPropertyFlags>,
-    sharing_mode: Defaulted<vk::SharingMode>,
+    size: Vec<u32>,
+    image_type: vk::ImageType,
+    mip_levels: u32,
+    num_samples: vk::SampleCountFlags,
+    format: vk::Format,
+    tiling: vk::ImageTiling,
+    usage: vk::ImageUsageFlags,
+    required_memory_properties: vk::MemoryPropertyFlags,
+    sharing_mode: vk::SharingMode,
 }
 
 impl ImageBuilder {
@@ -44,15 +43,15 @@ impl ImageBuilder {
     fn new(name: &str, size: Vec<u32>, image_type: vk::ImageType) -> Self {
         Self{
             name: String::from(name),
-            size: Defaulted::new(size),
-            image_type: Defaulted::new(image_type),
-            mip_levels: Defaulted::new(1),
-            num_samples: Defaulted::new(vk::SampleCountFlags::TYPE_1),
-            format: Defaulted::new(vk::Format::R8G8B8A8_UNORM),
-            tiling: Defaulted::new(vk::ImageTiling::OPTIMAL),
-            usage: Defaulted::new(vk::ImageUsageFlags::TRANSFER_DST),
-            required_memory_properties: Defaulted::new(vk::MemoryPropertyFlags::DEVICE_LOCAL),
-            sharing_mode: Defaulted::new(vk::SharingMode::EXCLUSIVE),
+            size: size,
+            image_type: image_type,
+            mip_levels: 1,
+            num_samples: vk::SampleCountFlags::TYPE_1,
+            format: vk::Format::R8G8B8A8_UNORM,
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::TRANSFER_DST,
+            required_memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
         }
     }
 
@@ -102,9 +101,9 @@ impl Image {
         device: Rc<InnerDevice>,
         builder: ImageBuilder,
     ) -> Result<Self> {
-        let image_type = *builder.image_type.get_value();
-        let format = *builder.format.get_value();
-        let dimensions = builder.size.get_value();
+        let image_type = builder.image_type;
+        let format = builder.format;
+        let dimensions = builder.size;
         let extent = match image_type {
             vk::ImageType::TYPE_1D => vk::Extent3D{
                 width: dimensions[0],
@@ -138,12 +137,12 @@ impl Image {
             image_type,
             format,
             extent,
-            mip_levels: *builder.mip_levels.get_value(),
+            mip_levels: builder.mip_levels,
             array_layers: 1,
-            samples: *builder.num_samples.get_value(),
-            tiling: *builder.tiling.get_value(),
-            usage: *builder.usage.get_value(),
-            sharing_mode: *builder.sharing_mode.get_value(),
+            samples: builder.num_samples,
+            tiling: builder.tiling,
+            usage: builder.usage,
+            sharing_mode: builder.sharing_mode,
             queue_family_index_count: 0,
             p_queue_family_indices: ptr::null(),
             initial_layout: vk::ImageLayout::UNDEFINED,

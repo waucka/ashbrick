@@ -1,6 +1,5 @@
 use ash::vk;
 use winit::event_loop::EventLoop;
-use defaulted::Defaulted;
 
 pub use ash;
 pub use winit;
@@ -29,19 +28,19 @@ use errors::{Error, Result};
 macro_rules! impl_defaulted_setter {
     ( $fn_name:ident, $field_name:ident, str ) => {
     pub fn $fn_name(mut self, $field_name: &str) -> Self {
-        self.$field_name.set_value($field_name.to_string());
+        self.$field_name = $field_name.to_string();
         self
     }
     };
     ( $fn_name:ident, $field_name:ident, $type:ty, ref ) => {
     pub fn $fn_name(mut self, $field_name: &$type) -> Self {
-        self.$field_name.set_value($field_name);
+        self.$field_name = $field_name;
         self
     }
     };
     ( $fn_name:ident, $field_name:ident, $type:ty) => {
     pub fn $fn_name(mut self, $field_name: $type) -> Self {
-        self.$field_name.set_value($field_name);
+        self.$field_name = $field_name;
         self
     }
     };
@@ -279,22 +278,22 @@ impl std::cmp::PartialEq for Queue {
 impl std::cmp::Eq for Queue {}
 
 pub struct DeviceBuilder {
-    window_title: Defaulted<String>,
-    application_version: Defaulted<u32>,
-    window_size: Defaulted<(u32, u32)>,
+    window_title: String,
+    application_version: u32,
+    window_size: (u32, u32),
     extensions: Vec<String>,
-    validation_enabled: Defaulted<bool>,
+    validation_enabled: bool,
     windowing_prefs: platforms::WindowingPreferences,
 }
 
 impl DeviceBuilder {
     pub fn new() -> Self {
         Self {
-            window_title: Defaulted::new("Some Random Application".to_string()),
-            application_version: Defaulted::new(vk::make_api_version(0, 0, 1, 0)),
-            window_size: Defaulted::new((640, 480)),
+            window_title: "Some Random Application".to_string(),
+            application_version: vk::make_api_version(0, 0, 1, 0),
+            window_size: (640, 480),
             extensions: Vec::new(),
-            validation_enabled: Defaulted::new(false),
+            validation_enabled: false,
             windowing_prefs: Default::default(),
         }
     }
@@ -307,12 +306,12 @@ impl DeviceBuilder {
     impl_defaulted_setter!(with_validation, validation_enabled, bool);
 
     pub fn with_application_version(mut self, major: u32, minor: u32, patch: u32) -> Self {
-        self.application_version.set_value(vk::make_api_version(0, major, minor, patch));
+        self.application_version = vk::make_api_version(0, major, minor, patch);
         self
     }
 
     pub fn with_window_size(mut self, width: usize, height: usize) -> Self {
-        self.window_size.set_value((width as u32, height as u32));
+        self.window_size = (width as u32, height as u32);
         self
     }
 
@@ -556,13 +555,13 @@ impl std::fmt::Debug for InnerDevice {
 
 impl InnerDevice {
     pub fn new(event_loop: &EventLoop<()>, builder: DeviceBuilder) -> Result<Rc<Self>> {
-        let window_title = builder.window_title.get_value();
-        let (window_width, window_height) = builder.window_size.get_value();
+        let window_title = &builder.window_title;
+        let (window_width, window_height) = builder.window_size;
         let window = window::init_window(
             event_loop,
             window_title,
-            *window_width,
-            *window_height,
+            window_width,
+            window_height,
         );
         let entry = unsafe {
             match ash::Entry::new() {
@@ -574,7 +573,7 @@ impl InnerDevice {
             &entry,
             window_title,
             ENGINE_NAME,
-            *builder.application_version.get_value(),
+            builder.application_version,
             ENGINE_VERSION,
             VULKAN_API_VERSION,
         )?;
@@ -619,7 +618,7 @@ impl InnerDevice {
             swapchain_loader,
             debug_utils_loader,
             debug_messenger,
-            validation_enabled: *builder.validation_enabled.get_value(),
+            validation_enabled: builder.validation_enabled,
             allocator,
 
             physical_device,
