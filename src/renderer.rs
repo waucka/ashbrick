@@ -1488,6 +1488,43 @@ impl RenderPass {
         }
     }
 
+    pub fn create_framebuffer(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> Result<Framebuffer> {
+        let (_, attachment_image_infos) = self.get_attachment_infos(width, height);
+        let attachments_info = vk::FramebufferAttachmentsCreateInfo{
+            s_type: vk::StructureType::FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
+            p_next: ptr::null(),
+            attachment_image_info_count: attachment_image_infos.infos.len() as u32,
+            p_attachment_image_infos: attachment_image_infos.infos.as_ptr(),
+        };
+
+        let framebuffer_create_info = vk::FramebufferCreateInfo{
+            s_type: vk::StructureType::FRAMEBUFFER_CREATE_INFO,
+            p_next: (&attachments_info as *const _) as *const c_void,
+            flags: vk::FramebufferCreateFlags::IMAGELESS,
+            render_pass: self.render_pass,
+            attachment_count: attachments_info.attachment_image_info_count,
+            p_attachments: ptr::null(),
+            width,
+            height,
+            layers: 1,
+        };
+
+        Ok(Framebuffer{
+            device: Rc::clone(&self.device),
+            framebuffer: unsafe {
+                Error::wrap_result(
+                    self.device.device
+                        .create_framebuffer(&framebuffer_create_info, None),
+                    "Failed to create framebuffer",
+                )?
+            },
+        })
+    }
+
     fn get_attachment_infos(&self, width: u32, height: u32) -> (Vec<Pin<Vec<vk::Format>>>, AttachmentInfoSet) {
         let mut image_infos = vec![];
         let mut formats = vec![];
@@ -1523,64 +1560,39 @@ pub struct Framebuffer {
     pub (crate) framebuffer: vk::Framebuffer,
 }
 
-impl Framebuffer {
-    pub fn new(
-        device: &Device,
-        width: u32,
-        height: u32,
-        render_pass: &RenderPass,
-    ) -> Result<Self> {
-        Self::new_internal(
-            Rc::clone(&device.inner),
-            width,
-            height,
-            render_pass,
-        )
-    }
-
-    fn new_internal(
-        device: Rc<InnerDevice>,
-        width: u32,
-        height: u32,
-        render_pass: &RenderPass,
-    ) -> Result<Self> {
-        let (_, attachment_image_infos) = render_pass.get_attachment_infos(width, height);
-        let attachments_info = vk::FramebufferAttachmentsCreateInfo{
-            s_type: vk::StructureType::FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
-            p_next: ptr::null(),
-            attachment_image_info_count: attachment_image_infos.infos.len() as u32,
-            p_attachment_image_infos: attachment_image_infos.infos.as_ptr(),
-        };
-
-        let framebuffer_create_info = vk::FramebufferCreateInfo{
-            s_type: vk::StructureType::FRAMEBUFFER_CREATE_INFO,
-            p_next: (&attachments_info as *const _) as *const c_void,
-            flags: vk::FramebufferCreateFlags::IMAGELESS,
-            render_pass: render_pass.render_pass,
-            attachment_count: attachments_info.attachment_image_info_count,
-            p_attachments: ptr::null(),
-            width,
-            height,
-            layers: 1,
-        };
-
-        Ok(Self{
-            device: device.clone(),
-            framebuffer: unsafe {
-                Error::wrap_result(
-                    device.device
-                        .create_framebuffer(&framebuffer_create_info, None),
-                    "Failed to create framebuffer",
-                )?
-            },
-        })
-    }
-}
-
 impl Drop for Framebuffer {
     fn drop(&mut self) {
         unsafe {
             self.device.device.destroy_framebuffer(self.framebuffer, None);
         }
+    }
+}
+
+pub struct RenderPassData {
+    pub (crate) render_pass: RenderPass,
+    pub (crate) framebuffer: Framebuffer,
+}
+
+impl RenderPassData {
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
+        let new_framebuffer = self.render_pass.create_framebuffer(width, height)?;
+        self.framebuffer = new_framebuffer;
+        Ok(())
+    }
+
+    pub fn get_render_pass(&self) -> &RenderPass {
+        &self.render_pass
+    }
+
+    pub fn get_framebuffer(&self) -> &Framebuffer {
+        &self.framebuffer
+    }
+
+    pub (crate) fn get_render_pass_vk(&self) -> vk::RenderPass {
+        self.render_pass.render_pass
+    }
+
+    pub (crate) fn get_framebuffer_vk(&self) -> vk::Framebuffer {
+        self.framebuffer.framebuffer
     }
 }
