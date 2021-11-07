@@ -1,5 +1,5 @@
 use ash::vk;
-use glsl_layout::Uniform;
+use crevice::std140::AsStd140;
 
 use std::rc::Rc;
 use std::marker::PhantomData;
@@ -310,23 +310,21 @@ impl Drop for IndexBuffer {
     }
 }
 
-pub struct UniformBuffer<T: Uniform>
-where <T as Uniform>::Std140: Sized
+pub struct UniformBuffer<T: AsStd140>
 {
     buf: Rc<Buffer>,
     size: usize,
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Uniform> UniformBuffer<T>
-where <T as Uniform>::Std140: Sized
+impl<T: AsStd140> UniformBuffer<T>
 {
     pub fn new(
         device: &Device,
         name: &str,
         initial_value: Option<&T>,
     ) -> Result<Self> {
-        let size = std::mem::size_of::<T::Std140>();
+        let size = T::std140_size_static();
         let buffer = Rc::new(Buffer::new(
             Rc::clone(&device.inner),
             name,
@@ -354,8 +352,8 @@ where <T as Uniform>::Std140: Sized
         &self,
         new_value: &T,
     ) -> Result<()> {
-        let std140_val = new_value.std140();
-        let std140_value_size = std::mem::size_of_val::<T::Std140>(&std140_val);
+        let std140_val = new_value.as_std140();
+        let std140_value_size = T::std140_size_static();
         if self.size < std140_value_size {
             Err(Error::InvalidUniformWrite(std140_value_size, self.size))
         } else {
@@ -371,19 +369,9 @@ where <T as Uniform>::Std140: Sized
     }
 }
 
-impl<T: Uniform> HasBuffer for UniformBuffer<T>
-where <T as Uniform>::Std140: Sized
+impl<T: AsStd140> HasBuffer for UniformBuffer<T>
 {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
-    }
-}
-
-impl<T: Uniform> Drop for UniformBuffer<T>
-where <T as Uniform>::Std140: Sized
-{
-    fn drop(&mut self) {
-        // Drop has been implemented solely so that UniformBuffers can be recorded as
-        // dependencies for CommandBuffers.
     }
 }

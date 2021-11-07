@@ -17,7 +17,7 @@ num = "0.3"
 memoffset = "0.6"
 cgmath = "0.17"
 image = "0.23"
-glsl-layout = "0.4"
+crevice = "0.8"
 exr = "1.1"
 egui = { version = "0.15.0", optional = true }
 defaulted = { git = "https://git.wauckanet/waucka/defaulted.git", branch = "master" }
