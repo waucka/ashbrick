@@ -61,42 +61,6 @@ pub trait Vertex {
     fn get_attribute_descriptions() -> Vec<vk::VertexInputAttributeDescription>;
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct SimpleVertex {
-    pub pos: [f32; 4],
-}
-
-impl SimpleVertex {
-    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
-        Self {
-            pos: [x, y, z, w],
-        }
-    }
-}
-
-impl Vertex for SimpleVertex {
-    fn get_binding_description() -> Vec<vk::VertexInputBindingDescription> {
-        vec![vk::VertexInputBindingDescription{
-            binding: 0,
-            stride: std::mem::size_of::<Self>() as u32,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }]
-    }
-
-    fn get_attribute_descriptions() -> Vec<vk::VertexInputAttributeDescription> {
-        use memoffset::offset_of;
-        vec![
-            vk::VertexInputAttributeDescription{
-                binding: 0,
-                location: 0,
-                format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(Self, pos) as u32,
-            },
-        ]
-    }
-}
-
 pub struct VertexShader<V> where V: Vertex {
     shader: Shader,
     _phantom: std::marker::PhantomData<V>,
