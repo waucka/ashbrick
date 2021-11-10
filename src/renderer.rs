@@ -834,6 +834,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct AttachmentDescription {
     is_multisampled: bool,
     usage: vk::ImageUsageFlags,
@@ -975,6 +976,7 @@ impl AttachmentDescription {
     }
 }
 
+#[derive(Clone)]
 pub struct Subpass {
     pipeline_bind_point: vk::PipelineBindPoint,
     input_attachments: Vec<vk::AttachmentReference>,
@@ -1277,6 +1279,7 @@ impl From<SubpassRef> for u32 {
     }
 }
 
+#[derive(Clone)]
 pub struct RenderPassBuilder {
     attachments: Vec<AttachmentDescription>,
     subpasses: Vec<Subpass>,
