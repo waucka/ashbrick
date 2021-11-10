@@ -1385,7 +1385,7 @@ impl RenderPassBuilder {
 pub trait RenderPassFactory<D> {
     type Output;
 
-    fn create_render_pass(&self, data: Option<D>) -> RenderPass<Self::Output>;
+    fn create_render_pass(&self, device: &Device, data: Option<D>) -> RenderPass<Self::Output>;
 }
 
 // The purpose of the type parameter is to prevent render passes that
