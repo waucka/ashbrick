@@ -23,7 +23,7 @@ mod platforms;
 mod utils;
 mod window;
 
-use errors::{Error, Result};
+pub use errors::{Error, Result};
 
 macro_rules! impl_defaulted_setter {
     ( $fn_name:ident, $field_name:ident, str ) => {
