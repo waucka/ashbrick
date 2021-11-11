@@ -846,6 +846,7 @@ pub struct AttachmentDescription {
     stencil_store_op: vk::AttachmentStoreOp,
     initial_layout: vk::ImageLayout,
     final_layout: vk::ImageLayout,
+    clear_value: vk::ClearValue,
 }
 
 impl AttachmentDescription {
@@ -860,6 +861,7 @@ impl AttachmentDescription {
         stencil_store_op: vk::AttachmentStoreOp,
         initial_layout: vk::ImageLayout,
         final_layout: vk::ImageLayout,
+        clear_value: vk::ClearValue,
     ) -> Self {
         Self{
             is_multisampled,
@@ -872,6 +874,7 @@ impl AttachmentDescription {
             stencil_store_op,
             initial_layout,
             final_layout,
+            clear_value,
         }
     }
 
@@ -892,6 +895,11 @@ impl AttachmentDescription {
             stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
             initial_layout: vk::ImageLayout::UNDEFINED,
             final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            clear_value: vk::ClearValue{
+                color: vk::ClearColorValue{
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
         }
     }
 
@@ -912,6 +920,11 @@ impl AttachmentDescription {
             stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
             initial_layout: vk::ImageLayout::UNDEFINED,
             final_layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            clear_value: vk::ClearValue{
+                color: vk::ClearColorValue{
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
         }
     }
 
@@ -935,6 +948,11 @@ impl AttachmentDescription {
             stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
             initial_layout: vk::ImageLayout::UNDEFINED,
             final_layout: vk::ImageLayout::PRESENT_SRC_KHR,
+            clear_value: vk::ClearValue{
+                color: vk::ClearColorValue{
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
         }
     }
 
@@ -954,6 +972,12 @@ impl AttachmentDescription {
             stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
             initial_layout: vk::ImageLayout::UNDEFINED,
             final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            clear_value: vk::ClearValue{
+                depth_stencil: vk::ClearDepthStencilValue{
+                    depth: 1.0,
+                    stencil: 0,
+                },
+            },
         }
     }
 
@@ -1506,6 +1530,10 @@ impl<T: 'static> RenderPass<T> {
             formats.push(view_formats);
         }
         (formats, AttachmentInfoSet::new(image_infos))
+    }
+
+    pub fn get_clear_value(&self, att_ref: AttachmentRef) -> vk::ClearValue {
+        self.attachments[att_ref.idx].clear_value
     }
 }
 
