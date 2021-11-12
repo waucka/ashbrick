@@ -51,6 +51,7 @@ pub mod command_buffer;
 pub mod image;
 pub mod renderer;
 pub mod shader;
+pub mod sync;
 pub mod texture;
 pub mod descriptor;
 

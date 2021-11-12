@@ -11,6 +11,7 @@ use std::pin::Pin;
 use super::{Device, InnerDevice, Queue, FrameId, PerFrameSet};
 use super::image::{Image, ImageView, ImageBuilder};
 use super::texture::Texture;
+use super::sync::{Semaphore, Fence};
 use super::shader::{VertexShader, FragmentShader, Vertex, GenericShader};
 use super::descriptor::DescriptorSetLayout;
 use super::command_buffer::CommandBuffer;
@@ -22,15 +23,42 @@ pub struct SwapchainImageRef {
     pub (crate) idx: u32,
 }
 
+struct InflightFence {
+    fence: Rc<Fence>,
+    in_use: bool,
+}
+
+impl InflightFence {
+    pub fn wait(&self, timeout: u64) -> Result<()> {
+        if self.in_use {
+            self.fence.wait(timeout)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn reset(&self) -> Result<()> {
+        self.fence.reset()
+    }
+
+    pub fn mark_used(&mut self) {
+        self.in_use = true;
+    }
+
+    pub fn mark_unused(&mut self) {
+        self.in_use = false;
+    }
+}
+
 pub struct Presenter {
     device: Rc<InnerDevice>,
     swapchain: Option<Swapchain>,
 
-    image_available_semaphores: Vec<vk::Semaphore>,
-    render_finished_semaphores: Vec<vk::Semaphore>,
+    image_available_semaphores: PerFrameSet<Rc<Semaphore>>,
+    render_finished_semaphores: PerFrameSet<Rc<Semaphore>>,
+    inflight_fences: Vec<InflightFence>,
     last_frame: Instant,
     last_frame_duration: Duration,
-    current_swapchain_sync: usize,
     desired_fps: u32,
     current_frame: FrameId,
 
@@ -44,36 +72,27 @@ impl Presenter {
     ) -> Result<Self> {
         let swapchain = Swapchain::new(device.inner.clone())?;
 
-        let mut image_available_semaphores = vec![];
-        let mut render_finished_semaphores = vec![];
 
-        let semaphore_create_info = vk::SemaphoreCreateInfo{
-            s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
-            p_next: ptr::null(),
-            flags: vk::SemaphoreCreateFlags::empty(),
-        };
+        let image_available_semaphores = PerFrameSet::new(
+            |_| {
+                Ok(Rc::new(Semaphore::new(device)?))
+            },
+        )?;
+        let render_finished_semaphores = PerFrameSet::new(
+            |_| {
+                Ok(Rc::new(Semaphore::new(device)?))
+            },
+        )?;
 
         let num_swapchain_images = swapchain.get_num_images();
         dbg!(num_swapchain_images);
 
+        let mut inflight_fences = Vec::with_capacity(num_swapchain_images);
         for _ in 0..num_swapchain_images {
-            unsafe {
-                let image_available_semaphore = Error::wrap_result(
-                    device.inner.device
-                        .create_semaphore(&semaphore_create_info, None),
-                    "Failed to create image-available semaphore",
-                )?;
-                let render_finished_semaphore = Error::wrap_result(
-                    device.inner.device
-                        .create_semaphore(&semaphore_create_info, None),
-                    "Failed to create render-finished semaphore",
-                )?;
-
-                image_available_semaphores
-                    .push(image_available_semaphore);
-                render_finished_semaphores
-                    .push(render_finished_semaphore);
-            }
+            inflight_fences.push(InflightFence{
+                fence: Rc::new(Fence::new(device, true)?),
+                in_use: false,
+            });
         }
 
         Ok(Self{
@@ -82,7 +101,7 @@ impl Presenter {
 
             image_available_semaphores,
             render_finished_semaphores,
-            current_swapchain_sync: 0,
+            inflight_fences,
             last_frame: Instant::now(),
             last_frame_duration: Duration::new(0, 0),
             desired_fps,
@@ -119,11 +138,7 @@ impl Presenter {
         }
     }
 
-    pub fn get_current_frame(&self) -> FrameId {
-        self.current_frame
-    }
-
-    pub fn wait_for_next_frame(&self) -> Result<Duration> {
+    fn wait_for_next_frame(&self) -> Duration {
         let millis_since_last_frame = self.last_frame.elapsed().as_millis() as i64;
         let millis_until_next_frame = (
             ((1_f32 / self.desired_fps as f32) * 1000_f32) as i64
@@ -133,29 +148,7 @@ impl Presenter {
             std::thread::sleep(Duration::from_millis(millis_until_next_frame as u64));
         }
 
-        Ok(self.last_frame.elapsed())
-    }
-
-    pub fn acquire_next_image<F>(&mut self) -> Result<SwapchainImageRef>
-    where
-        F: FnMut(usize, usize) -> Result<()>
-    {
-        let result = self.device
-            .acquire_next_image(
-                self.swapchain.as_ref().unwrap().swapchain,
-                std::u64::MAX,
-                self.image_available_semaphores[self.current_swapchain_sync],
-                vk::Fence::null(),
-            );
-        match result {
-            Ok((idx, is_sub_optimal)) => if is_sub_optimal {
-                Err(Error::NeedResize)
-            } else {
-                Ok(SwapchainImageRef{ idx })
-            },
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Err(Error::NeedResize),
-            Err(e) => Err(Error::wrap(e, "Failed to acquire swap chain image")),
-        }
+        self.last_frame.elapsed()
     }
 
     // This is allegedly not even close to complete.  I disagree.
@@ -193,54 +186,77 @@ impl Presenter {
         Ok(())
     }
 
-    pub fn submit_command_buffer(
-        &self,
-        command_buffer: &CommandBuffer,
-        wait_stage: vk::PipelineStageFlags,
-    ) -> Result<()> {
-        let idx = self.current_swapchain_sync;
-        command_buffer.submit_synced(
-            &[(wait_stage, self.image_available_semaphores[idx])],
-            &[self.render_finished_semaphores[idx]],
-        )
-    }
-
-    pub fn present_frame<F>(&mut self, image_index: u32, viewport_update: &mut F) -> Result<()>
+    pub fn render<F>(&mut self, get_render_data: &mut F) -> Result<()>
     where
-        F: FnMut(usize, usize) -> Result<()>
+        F: FnMut(FrameId, SwapchainImageRef) -> Result<RenderData>
     {
+        let image_available_semaphore = Rc::clone(self.image_available_semaphores.get(self.current_frame));
+        let render_finished_semaphore = Rc::clone(self.render_finished_semaphores.get(self.current_frame));
+        let swapchain_image = {
+            let result = self.device
+                .acquire_next_image(
+                    self.swapchain.as_ref().unwrap().swapchain,
+                    std::u64::MAX,
+                    image_available_semaphore.semaphore,
+                    vk::Fence::null(),
+                );
+            match result {
+                Ok((idx, is_sub_optimal)) => if is_sub_optimal {
+                    Err(Error::NeedResize)
+                } else {
+                    Ok(SwapchainImageRef{ idx })
+                },
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Err(Error::NeedResize),
+                Err(e) => Err(Error::wrap(e, "Failed to acquire swap chain image")),
+            }
+        }?;
+        let current_swapchain_sync = swapchain_image.idx as usize;
+        let presentation_wait_semaphores = [render_finished_semaphore.semaphore];
+        let inflight_fence = &mut self.inflight_fences[current_swapchain_sync];
+        let render_data = get_render_data(self.current_frame, swapchain_image)?;
+        inflight_fence.wait(u64::MAX)?;
+        inflight_fence.reset()?;
+        inflight_fence.mark_used();
+        let submit_res = render_data.command_buffer.submit_synced(
+            &[(render_data.wait_stage, image_available_semaphore)],
+            &[render_finished_semaphore],
+            Some(Rc::clone(&inflight_fence.fence)),
+        );
+        match submit_res {
+            Ok(_) => (),
+            Err(e) => {
+                // Mark the fence as unused, since the queue submission won't be signalling the fence.
+                // Since the fence won't get signalled, the next wait() call will wait forever if
+                // we don't do this.
+                inflight_fence.mark_unused();
+                return Err(e);
+            },
+        }
         //println!("Presenting a frame...");
         //let start = std::time::Instant::now();
         let swapchains = [self.swapchain.as_ref().unwrap().swapchain];
-        let wait_semaphores = [self.render_finished_semaphores[self.current_swapchain_sync]];
         let present_info = vk::PresentInfoKHR{
             s_type: vk::StructureType::PRESENT_INFO_KHR,
             p_next: ptr::null(),
             wait_semaphore_count: 1,
-            p_wait_semaphores: wait_semaphores.as_ptr(),
+            p_wait_semaphores: presentation_wait_semaphores.as_ptr(),
             swapchain_count: 1,
             p_swapchains: swapchains.as_ptr(),
-            p_image_indices: &image_index,
+            p_image_indices: &swapchain_image.idx,
             p_results: ptr::null_mut(),
         };
 
-        let result = self.device.queue_present(Rc::clone(&self.present_queue), &present_info);
-
-        let is_resized = match result {
-            Ok(_) => false,
-            Err(vk_result) => match vk_result {
-                vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::SUBOPTIMAL_KHR => true,
-                e => return Err(Error::wrap(e, "Failed to submit swap to presentation queue")),
-            },
-        };
-
-        if is_resized {
-            self.fit_to_window()?;
-            let (width, height) = self.get_dimensions();
-            viewport_update(width, height)?;
+        if render_data.wait_for_next_frame {
+            self.wait_for_next_frame();
         }
 
-        self.current_swapchain_sync = (self.current_swapchain_sync + 1) % self.swapchain.as_ref().unwrap().get_num_images();
+        match self.device.queue_present(Rc::clone(&self.present_queue), &present_info){
+            Ok(_) => (),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) |
+            Err(vk::Result::SUBOPTIMAL_KHR) => return Err(Error::NeedResize),
+            Err(e) => return Err(Error::wrap(e, "Failed to present")),
+        };
+
         self.last_frame_duration = self.last_frame.elapsed();
         self.last_frame = Instant::now();
         //println!("Presented frame in {}ns", start.elapsed().as_nanos());
@@ -249,18 +265,10 @@ impl Presenter {
     }
 }
 
-impl Drop for Presenter {
-    fn drop(&mut self) {
-        //println!("Dropping a Presenter...");
-        unsafe {
-            for sem in self.image_available_semaphores.iter() {
-                self.device.device.destroy_semaphore(*sem, None);
-            }
-            for sem in self.render_finished_semaphores.iter() {
-                self.device.device.destroy_semaphore(*sem, None);
-            }
-        }
-    }
+pub struct RenderData {
+    pub command_buffer: Rc<CommandBuffer>,
+    pub wait_stage: vk::PipelineStageFlags,
+    pub wait_for_next_frame: bool,
 }
 
 struct FrameData {

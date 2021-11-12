@@ -11,6 +11,7 @@ use super::renderer::{Presenter, SwapchainImageRef, RenderPass, Pipeline, Subpas
 use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer, Buffer};
 use super::image::Image;
 use super::shader::Vertex;
+use super::sync::{Semaphore, Fence};
 
 use super::errors::{Error, Result};
 
@@ -150,7 +151,6 @@ impl Drop for CommandPool {
 pub struct CommandBuffer {
     device: Rc<InnerDevice>,
     pool: Rc<CommandPool>,
-    inflight_fence: vk::Fence,
     level: vk::CommandBufferLevel,
     buf: vk::CommandBuffer,
     // This vector stores references to things that shouldn't be destroyed until
@@ -179,51 +179,23 @@ impl CommandBuffer {
             level,
         };
 
-        let fence_create_info = vk::FenceCreateInfo{
-            s_type: vk::StructureType::FENCE_CREATE_INFO,
-            p_next: ptr::null(),
-            flags: vk::FenceCreateFlags::SIGNALED,
-        };
-        let inflight_fence = unsafe {
+        let command_buffer = unsafe {
             Error::wrap_result(
                 device.device
-                    .create_fence(&fence_create_info, None),
-                "Failed to create command buffer fence",
+                    .allocate_command_buffers(&command_buffer_allocate_info),
+                    "Failed to allocate command buffers",
             )?
-        };
-
-        let command_buffer = unsafe {
-            match device.device
-                .allocate_command_buffers(&command_buffer_allocate_info) {
-                    Ok(buf) => buf,
-                    Err(e) => {
-                        device.device.destroy_fence(inflight_fence, None);
-                        return Err(Error::wrap(e, "Failed to allocate command buffer"));
-                    },
-                }
         }[0];
 
         Ok(Self{
             device,
             pool,
-            inflight_fence,
             level,
             buf: command_buffer,
             dependencies: Vec::new(),
         })
     }
 
-    pub fn wait_for_ready(&self) -> Result<()> {
-        let wait_fences = [self.inflight_fence];
-        unsafe {
-            Error::wrap_result(
-                self.device.device
-                    .wait_for_fences(&wait_fences, true, std::u64::MAX),
-                "Failed to wait for fences",
-            )?;
-        }
-        Ok(())
-    }
     pub fn record<T, R>(
         &mut self,
         usage_flags: vk::CommandBufferUsageFlags,
@@ -280,8 +252,9 @@ impl CommandBuffer {
 
     pub fn submit_synced(
         &self,
-        wait: &[(vk::PipelineStageFlags, vk::Semaphore)],
-        signal_semaphores: &[vk::Semaphore],
+        wait: &[(vk::PipelineStageFlags, Rc<Semaphore>)],
+        signal_semaphores: &[Rc<Semaphore>],
+        signal_fence: Option<Rc<Fence>>,
     ) -> Result<()> {
         if self.level == vk::CommandBufferLevel::SECONDARY {
             panic!("Tried to manually submit a secondary command buffer!");
@@ -291,9 +264,12 @@ impl CommandBuffer {
         let mut wait_semaphores = Vec::new();
         for (stage, sem) in wait {
             wait_stages.push(*stage);
-            wait_semaphores.push(*sem);
+            wait_semaphores.push(sem.semaphore);
         }
-        let wait_fences = [self.inflight_fence];
+        let mut signal_semaphores_vec = Vec::new();
+        for sem in signal_semaphores {
+            signal_semaphores_vec.push(sem.semaphore);
+        }
 
         let submit_infos = [vk::SubmitInfo{
             s_type: vk::StructureType::SUBMIT_INFO,
@@ -303,22 +279,29 @@ impl CommandBuffer {
             p_wait_dst_stage_mask: wait_stages.as_ptr(),
             command_buffer_count: 1,
             p_command_buffers: &self.buf,
-            signal_semaphore_count: signal_semaphores.len() as u32,
-            p_signal_semaphores: signal_semaphores.as_ptr(),
+            signal_semaphore_count: signal_semaphores_vec.len() as u32,
+            p_signal_semaphores: signal_semaphores_vec.as_ptr(),
         }];
 
         unsafe {
-            Error::wrap_result(
-                self.device.device
-                    .reset_fences(&wait_fences),
-                "Failed to reset fences during command buffer submission",
-            )?;
+            let wait_fence = match signal_fence {
+                Some(fence) => {
+                    let wait_fences = [fence.fence];
+                    Error::wrap_result(
+                        self.device.device
+                            .reset_fences(&wait_fences),
+                        "Failed to reset fences during command buffer submission",
+                    )?;
+                    fence.fence
+                },
+                None => vk::Fence::null(),
+            };
             Error::wrap_result(
                 self.device.device
                     .queue_submit(
                         self.pool.queue.get(),
                         &submit_infos,
-                        self.inflight_fence,
+                        wait_fence,
                     ),
                 "Failed to submit command buffer",
             )?;
@@ -328,7 +311,6 @@ impl CommandBuffer {
 
     #[allow(unused)]
     pub fn reset(&mut self) -> Result<()> {
-        self.wait_for_ready()?;
         unsafe {
             Error::wrap_result(
                 self.device.device.reset_command_buffer(self.buf, vk::CommandBufferResetFlags::empty()),
@@ -346,11 +328,14 @@ impl CommandBuffer {
             panic!("Tried to manually submit a secondary command buffer!");
         }
 
+        let fence = Rc::new(Fence::new_internal(&self.device, false)?);
+
         self.submit_synced(
             &[],
             &[],
+            Some(Rc::clone(&fence)),
         )?;
-        self.wait_for_ready()?;
+        fence.wait(u64::MAX)?;
 
         Ok(())
     }
@@ -391,13 +376,6 @@ impl Drop for CommandBuffer {
     fn drop(&mut self) {
         let buffers = [self.buf];
         unsafe {
-            let wait_fences = [self.inflight_fence];
-            match self.device.device
-                .wait_for_fences(&wait_fences, true, std::u64::MAX) {
-                    Ok(_) => (),
-                    Err(e) => println!("Failed to wait for buffer to be ready: {}", e),
-                };
-            self.device.device.destroy_fence(self.inflight_fence, None);
             self.device.device.free_command_buffers(self.pool.command_pool, &buffers);
         }
     }
