@@ -1,5 +1,5 @@
 use ash::vk;
-use crevice::std140::AsStd140;
+use crevice::std140::{AsStd140, WriteStd140};
 
 use std::rc::Rc;
 use std::marker::PhantomData;
@@ -48,6 +48,87 @@ impl<T> MemoryMapping<T> {
             };
             data_ptr.copy_from_nonoverlapping(src, 1);
         }
+        Ok(())
+    }
+
+    fn get_writer(&self) -> Result<MemoryMappingWriter> {
+        let data_ptr = match self.allocation.mapped_ptr() {
+            Some(v) => v.as_ptr() as *mut u8,
+            None => return Err(Error::UnmappableBuffer),
+        };
+        Ok(MemoryMappingWriter {
+            data_ptr,
+            offset: 0,
+            limit: self.allocation.size() as usize,
+        })
+    }
+}
+
+#[derive(Debug)]
+enum MemoryWriteError {
+    Eof{
+        offset: usize,
+        limit: usize,
+        write_size: usize,
+    },
+}
+
+impl std::error::Error for MemoryWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+
+impl std::fmt::Display for MemoryWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use MemoryWriteError::*;
+        match self {
+            Eof{
+                offset,
+                limit,
+                write_size,
+            } => write!(
+                f, "Tried to write {} bytes to a {}-byte buffer starting at {}",
+                write_size, limit, offset,
+            ),
+        }
+    }
+}
+
+pub struct MemoryMappingWriter {
+    data_ptr: *mut u8,
+    offset: usize,
+    limit: usize,
+}
+
+impl std::io::Write for MemoryMappingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.offset >= self.limit {
+            return Err(
+                std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    Box::new(MemoryWriteError::Eof{
+                        offset: self.offset,
+                        limit: self.limit,
+                        write_size: buf.len(),
+                    }),
+                )
+            );
+        }
+        let buf = if self.offset + buf.len() >= self.limit {
+            &buf[..self.limit - self.offset - 1]
+        } else {
+            buf
+        };
+        unsafe {
+            let data_ptr = self.data_ptr.add(self.offset);
+            data_ptr.copy_from_nonoverlapping(buf.as_ptr(), buf.len());
+            self.offset += buf.len();
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
 }
@@ -370,6 +451,75 @@ impl<T: AsStd140> UniformBuffer<T>
 }
 
 impl<T: AsStd140> HasBuffer for UniformBuffer<T>
+{
+    fn get_buffer(&self) -> vk::Buffer {
+        self.buf.buf
+    }
+}
+
+// ComplexUniformBuffer is for types that can't implement AsStd140
+pub struct ComplexUniformBuffer<T: WriteStd140>
+{
+    buf: Rc<Buffer>,
+    size: usize,
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: WriteStd140> ComplexUniformBuffer<T>
+{
+    pub fn new(
+        device: &Device,
+        name: &str,
+        initial_value: &T,
+    ) -> Result<Self> {
+        let size = initial_value.std140_size();
+        let buffer = Rc::new(Buffer::new(
+            Rc::clone(&device.inner),
+            name,
+            size as u64,
+            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            // TODO: allow GpuOnly for infrequently-updated buffers
+            MemoryUsage::CpuToGpu,
+            vk::SharingMode::EXCLUSIVE,
+        )?);
+
+        let this = Self{
+            buf: buffer,
+            size,
+            _phantom: std::marker::PhantomData,
+        };
+
+        this.update(initial_value)?;
+
+        Ok(this)
+    }
+
+    pub fn update(
+        &self,
+        new_value: &T,
+    ) -> Result<()> {
+        let std140_value_size = new_value.std140_size();
+        if self.size < std140_value_size {
+            Err(Error::InvalidUniformWrite(std140_value_size, self.size))
+        } else {
+            self.buf.with_memory_mapping(|mmap: &MemoryMapping<T>| {
+                let mut mmap_writer = mmap.get_writer()?;
+                let mut writer = crevice::std140::Writer::new(&mut mmap_writer);
+                Error::wrap_io(
+                    new_value.write_std140(&mut writer),
+                    "Failed to write std140 version of uniform buffer value",
+                )?;
+                Ok(())
+            })
+        }
+    }
+
+    pub fn len(&self) -> vk::DeviceSize {
+        self.size as vk::DeviceSize
+    }
+}
+
+impl<T: WriteStd140> HasBuffer for ComplexUniformBuffer<T>
 {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
