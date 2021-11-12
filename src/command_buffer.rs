@@ -7,7 +7,7 @@ use std::os::raw::c_void;
 
 use super::{Device, InnerDevice, Queue, FrameId, GraphicsResource};
 use super::descriptor::DescriptorSet;
-use super::renderer::{Presenter, RenderPass, Pipeline, AttachmentSet, SubpassRef, RenderPassData};
+use super::renderer::{Presenter, RenderPass, Pipeline, SubpassRef, RenderPassData};
 use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer, Buffer};
 use super::image::Image;
 use super::shader::Vertex;
@@ -439,7 +439,6 @@ impl BufferWriter {
         render_pass: &RenderPassData,
         frame: FrameId,
         clear_values: &[vk::ClearValue],
-        attachment_set: &AttachmentSet,
         swapchain_image_index: usize,
         first_subpass_uses_secondaries: bool,
         mut write_fn: T,
@@ -462,7 +461,7 @@ impl BufferWriter {
         let vk_attachments = {
             let mut vk_attachments = vec![];
             vk_attachments.push(presenter.get_swapchain_image_view(swapchain_image_index));
-            vk_attachments.extend(attachment_set.get_image_views(frame));
+            vk_attachments.extend(render_pass.get_framebuffer().get_image_views(frame));
             vk_attachments
         };
 

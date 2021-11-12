@@ -1146,23 +1146,26 @@ impl Subpass {
 }
 
 pub struct AttachmentInfoSet {
+    // This MUST exist, since the FramebufferAttachmentImageInfo objects point into it!
+    _formats: Vec<Pin<Vec<vk::Format>>>,
     infos: Vec<vk::FramebufferAttachmentImageInfo>,
 }
 
 impl AttachmentInfoSet {
-    pub fn new(infos: Vec<vk::FramebufferAttachmentImageInfo>) -> Self {
+    pub fn new(formats: Vec<Pin<Vec<vk::Format>>>, infos: Vec<vk::FramebufferAttachmentImageInfo>) -> Self {
         Self{
+            _formats: formats,
             infos,
         }
     }
 
-    pub fn check_attachments(&self, set: &AttachmentSet) -> bool {
-        if set.attachments.len() != self.infos.len() {
+    pub fn check_attachments(&self, framebuffer: &Framebuffer) -> bool {
+        if framebuffer.attachments.len() != self.infos.len() {
             return false;
         }
 
         for (i, info) in self.infos.iter().enumerate() {
-            let att = &set.attachments[i];
+            let att = &framebuffer.attachments[i];
             let mut ok = true;
             att.foreach(|_, tex| {
                 let size = tex.get_extent();
@@ -1181,89 +1184,6 @@ impl AttachmentInfoSet {
             }
         }
         true
-    }
-}
-
-pub struct AttachmentSet {
-    attachments: Vec<PerFrameSet<Rc<Texture>>>,
-}
-
-impl AttachmentSet {
-    pub fn for_renderpass(
-        render_pass: &RenderPass,
-        width: usize,
-        height: usize,
-        msaa_samples: vk::SampleCountFlags,
-    ) -> Result<Self> {
-        Ok(Self{
-            attachments: Self::create_attachment_textures(
-                render_pass,
-                width,
-                height,
-                msaa_samples,
-            )?,
-        })
-    }
-
-    pub fn get(&self, frame: FrameId, att_ref: &AttachmentRef) -> Rc<Texture> {
-        // We subtract one from the index because the index is based on the first attachment
-        // being the swapchain attachment.
-        self.attachments[att_ref.idx - 1].get(frame).clone()
-    }
-
-    pub (crate) fn get_image_views(&self, frame: FrameId) -> Vec<vk::ImageView> {
-        let mut image_views = Vec::new();
-        for att in self.attachments.iter() {
-            image_views.push(att.get(frame).image_view.view);
-        }
-        image_views
-    }
-
-    fn create_attachment_textures(
-        render_pass: &RenderPass,
-        width: usize,
-        height: usize,
-        msaa_samples: vk::SampleCountFlags,
-    ) -> Result<Vec<PerFrameSet<Rc<Texture>>>> {
-        let mut textures = Vec::new();
-        // Skip the first attachment in the list.  By convention, that one is the swapchain image.
-        let att_slice = &render_pass.attachments[1..];
-        for (idx, att) in att_slice.iter().enumerate() {
-            let texture_name = format!("attachment-image-{}", idx);
-            textures.push(PerFrameSet::new(
-                |_| {
-                    Ok(Rc::new(
-                        Texture::from_image_builder_internal(
-                            render_pass.device.clone(),
-                            att.aspect,
-                            1,
-                            att.initial_layout,
-                            ImageBuilder::new2d(&texture_name, width, height)
-                                .with_num_samples(msaa_samples)
-                                .with_format(att.format)
-                                .with_usage(att.usage)
-                        )?
-                    ))
-                }
-            )?);
-        }
-        Ok(textures)
-    }
-
-    pub fn resize(
-        &mut self,
-        render_pass: &RenderPass,
-        width: usize,
-        height: usize,
-        msaa_samples: vk::SampleCountFlags,
-    ) -> Result<()> {
-        self.attachments = Self::create_attachment_textures(
-            render_pass,
-            width,
-            height,
-            msaa_samples,
-        )?;
-        Ok(())
     }
 }
 
@@ -1293,7 +1213,7 @@ impl From<SubpassRef> for u32 {
 
 #[derive(Clone)]
 pub struct RenderPassBuilder {
-    attachments: Vec<AttachmentDescription>,
+    attachment_descriptions: Vec<AttachmentDescription>,
     subpasses: Vec<Subpass>,
     deps: Vec<vk::SubpassDependency>,
 }
@@ -1301,7 +1221,7 @@ pub struct RenderPassBuilder {
 impl RenderPassBuilder {
     pub fn new(swapchain_att: AttachmentDescription) -> Self {
         Self{
-            attachments: vec![swapchain_att],
+            attachment_descriptions: vec![swapchain_att],
             subpasses: Vec::new(),
             deps: Vec::new(),
         }
@@ -1314,8 +1234,8 @@ impl RenderPassBuilder {
     }
 
     pub fn add_attachment(&mut self, att: AttachmentDescription) -> AttachmentRef {
-        let idx = self.attachments.len();
-        self.attachments.push(att);
+        let idx = self.attachment_descriptions.len();
+        self.attachment_descriptions.push(att);
         AttachmentRef{
             idx,
         }
@@ -1329,24 +1249,24 @@ impl RenderPassBuilder {
         ];
         for (att_type, att_set) in att_sets.iter() {
             for (i, att_ref) in att_set.iter().enumerate() {
-                if att_ref.attachment as usize > self.attachments.len() {
+                if att_ref.attachment as usize > self.attachment_descriptions.len() {
                     panic!(
                         "Invalid {} attachment {}={} (we only have {})",
                         att_type,
                         i,
                         att_ref.attachment,
-                        self.attachments.len(),
+                        self.attachment_descriptions.len(),
                     );
                 }
             }
         }
 
         if let Some(att_ref) = &subpass.depth_attachment {
-            if att_ref.attachment as usize > self.attachments.len() {
+            if att_ref.attachment as usize > self.attachment_descriptions.len() {
                 panic!(
                     "Invalid depth attachment {} (we only have {})",
                     att_ref.attachment,
-                    self.attachments.len(),
+                    self.attachment_descriptions.len(),
                 );
             }
         }
@@ -1395,7 +1315,8 @@ impl RenderPassBuilder {
 pub struct RenderPass {
     device: Rc<InnerDevice>,
     pub (crate) render_pass: vk::RenderPass,
-    attachments: Vec<AttachmentDescription>,
+    attachment_descriptions: Vec<AttachmentDescription>,
+    msaa_samples: vk::SampleCountFlags,
 }
 
 impl RenderPass {
@@ -1404,16 +1325,16 @@ impl RenderPass {
         msaa_samples: vk::SampleCountFlags,
         builder: RenderPassBuilder,
     ) -> Result<Self> {
-        let (attachments, vk_attachments, subpasses, _subpass_data, deps) = match builder {
+        let (attachment_descriptions, vk_attachments, subpasses, _subpass_data, deps) = match builder {
             RenderPassBuilder{
-                attachments,
+                attachment_descriptions,
                 mut subpasses,
                 deps,
             } => {
                 let mut vk_attachments = Vec::new();
                 let mut vk_subpasses = Vec::new();
                 let mut _subpass_data = Vec::new();
-                for att in attachments.iter() {
+                for att in attachment_descriptions.iter() {
                     vk_attachments.push(att.as_vk(msaa_samples));
                 }
                 for subpass in subpasses.drain(..) {
@@ -1421,7 +1342,7 @@ impl RenderPass {
                     _subpass_data.push(subpass_data);
                     vk_subpasses.push(vk_subpass);
                 }
-                (attachments, vk_attachments, vk_subpasses, _subpass_data, deps)
+                (attachment_descriptions, vk_attachments, vk_subpasses, _subpass_data, deps)
             }
         };
 
@@ -1445,7 +1366,8 @@ impl RenderPass {
                         .create_render_pass(&render_pass_create_info, None),
                     "Failed to create render pass",
                 )?,
-                attachments,
+                attachment_descriptions,
+                msaa_samples,
             })
         }
     }
@@ -1455,42 +1377,18 @@ impl RenderPass {
         width: u32,
         height: u32,
     ) -> Result<Framebuffer> {
-        let (_, attachment_image_infos) = self.get_attachment_infos(width, height);
-        let attachments_info = vk::FramebufferAttachmentsCreateInfo{
-            s_type: vk::StructureType::FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
-            p_next: ptr::null(),
-            attachment_image_info_count: attachment_image_infos.infos.len() as u32,
-            p_attachment_image_infos: attachment_image_infos.infos.as_ptr(),
-        };
-
-        let framebuffer_create_info = vk::FramebufferCreateInfo{
-            s_type: vk::StructureType::FRAMEBUFFER_CREATE_INFO,
-            p_next: (&attachments_info as *const _) as *const c_void,
-            flags: vk::FramebufferCreateFlags::IMAGELESS,
-            render_pass: self.render_pass,
-            attachment_count: attachments_info.attachment_image_info_count,
-            p_attachments: ptr::null(),
+        Framebuffer::for_renderpass(
+            self,
             width,
             height,
-            layers: 1,
-        };
-
-        Ok(Framebuffer{
-            device: Rc::clone(&self.device),
-            framebuffer: unsafe {
-                Error::wrap_result(
-                    self.device.device
-                        .create_framebuffer(&framebuffer_create_info, None),
-                    "Failed to create framebuffer",
-                )?
-            },
-        })
+            self.msaa_samples,
+        )
     }
 
-    fn get_attachment_infos(&self, width: u32, height: u32) -> (Vec<Pin<Vec<vk::Format>>>, AttachmentInfoSet) {
+    fn get_attachment_infos(&self, width: u32, height: u32) -> AttachmentInfoSet {
         let mut image_infos = vec![];
         let mut formats = vec![];
-        for att in self.attachments.iter() {
+        for att in self.attachment_descriptions.iter() {
             let view_formats = Pin::new(vec![att.format]);
             image_infos.push(vk::FramebufferAttachmentImageInfo{
                 s_type: vk::StructureType::FRAMEBUFFER_ATTACHMENT_IMAGE_INFO,
@@ -1505,11 +1403,11 @@ impl RenderPass {
             });
             formats.push(view_formats);
         }
-        (formats, AttachmentInfoSet::new(image_infos))
+        AttachmentInfoSet::new(formats, image_infos)
     }
 
     pub fn get_clear_value(&self, att_ref: AttachmentRef) -> vk::ClearValue {
-        self.attachments[att_ref.idx].clear_value
+        self.attachment_descriptions[att_ref.idx].clear_value
     }
 }
 
@@ -1524,6 +1422,115 @@ impl Drop for RenderPass {
 pub struct Framebuffer {
     device: Rc<InnerDevice>,
     pub (crate) framebuffer: vk::Framebuffer,
+    // attachments does not include the swapchain image.
+    attachments: Vec<PerFrameSet<Rc<Texture>>>,
+}
+
+impl Framebuffer {
+    fn for_renderpass(
+        render_pass: &RenderPass,
+        width: u32,
+        height: u32,
+        msaa_samples: vk::SampleCountFlags,
+    ) -> Result<Self> {
+        let attachment_image_infos = render_pass.get_attachment_infos(width, height);
+        let attachments_info = vk::FramebufferAttachmentsCreateInfo{
+            s_type: vk::StructureType::FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
+            p_next: ptr::null(),
+            attachment_image_info_count: attachment_image_infos.infos.len() as u32,
+            p_attachment_image_infos: attachment_image_infos.infos.as_ptr(),
+        };
+
+        let framebuffer_create_info = vk::FramebufferCreateInfo{
+            s_type: vk::StructureType::FRAMEBUFFER_CREATE_INFO,
+            p_next: (&attachments_info as *const _) as *const c_void,
+            flags: vk::FramebufferCreateFlags::IMAGELESS,
+            render_pass: render_pass.render_pass,
+            attachment_count: attachments_info.attachment_image_info_count,
+            p_attachments: ptr::null(),
+            width,
+            height,
+            layers: 1,
+        };
+
+        Ok(Self{
+            device: Rc::clone(&render_pass.device),
+            framebuffer: unsafe {
+                Error::wrap_result(
+                    render_pass.device.device
+                        .create_framebuffer(&framebuffer_create_info, None),
+                    "Failed to create framebuffer",
+                )?
+            },
+            attachments: Self::create_attachment_textures(
+                render_pass,
+                width,
+                height,
+                msaa_samples,
+            )?,
+        })
+    }
+
+    pub fn get_attachment(&self, frame: FrameId, att_ref: &AttachmentRef) -> Rc<Texture> {
+        // We subtract one from the index because the index is based on the first attachment
+        // being the swapchain attachment.
+        self.attachments[att_ref.idx - 1].get(frame).clone()
+    }
+
+    pub (crate) fn get_image_views(&self, frame: FrameId) -> Vec<vk::ImageView> {
+        let mut image_views = Vec::new();
+        for att in self.attachments.iter() {
+            image_views.push(att.get(frame).image_view.view);
+        }
+        image_views
+    }
+
+    fn create_attachment_textures(
+        render_pass: &RenderPass,
+        width: u32,
+        height: u32,
+        msaa_samples: vk::SampleCountFlags,
+    ) -> Result<Vec<PerFrameSet<Rc<Texture>>>> {
+        let mut textures = Vec::new();
+        // Skip the first attachment in the list.  By convention, that one is the swapchain image.
+        let att_slice = &render_pass.attachment_descriptions[1..];
+        for (idx, att) in att_slice.iter().enumerate() {
+            let texture_name = format!("attachment-image-{}", idx);
+            textures.push(PerFrameSet::new(
+                |_| {
+                    Ok(Rc::new(
+                        Texture::from_image_builder_internal(
+                            render_pass.device.clone(),
+                            att.aspect,
+                            1,
+                            att.initial_layout,
+                            ImageBuilder::new2d(&texture_name, width as usize, height as usize)
+                                .with_num_samples(msaa_samples)
+                                .with_format(att.format)
+                                .with_usage(att.usage)
+                        )?
+                    ))
+                }
+            )?);
+        }
+        Ok(textures)
+    }
+
+    pub fn resize(
+        &mut self,
+        render_pass: &RenderPass,
+        width: usize,
+        height: usize,
+        msaa_samples: vk::SampleCountFlags,
+    ) -> Result<()> {
+        self.attachments = Self::create_attachment_textures(
+            render_pass,
+            width as u32,
+            height as u32,
+            msaa_samples,
+        )?;
+        Ok(())
+    }
 }
 
 impl Drop for Framebuffer {
