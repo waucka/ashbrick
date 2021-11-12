@@ -3,7 +3,6 @@ use winit::event_loop::EventLoop;
 
 pub use ash;
 pub use winit;
-pub use crevice;
 #[cfg(feature = "egui")]
 pub use egui;
 
