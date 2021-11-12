@@ -668,6 +668,7 @@ impl RenderPassWriter {
         &mut self,
         pipeline_layout: vk::PipelineLayout,
         descriptor_sets: &[Rc<DescriptorSet>],
+        first_set: u32,
     ) {
         let mut vk_sets = Vec::new();
         for set in descriptor_sets {
@@ -682,7 +683,7 @@ impl RenderPassWriter {
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline_layout,
-                0,
+                first_set,
                 &vk_sets,
                 &[],
             );
