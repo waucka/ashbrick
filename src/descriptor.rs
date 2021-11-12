@@ -1,5 +1,5 @@
 use ash::vk;
-use crevice::std140::AsStd140;
+use crevice::std140::{AsStd140, WriteStd140};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use std::ptr;
 use std::rc::Rc;
 
 use super::{Device, InnerDevice};
-use super::buffer::{UniformBuffer, HasBuffer};
+use super::buffer::{UniformBuffer, ComplexUniformBuffer, HasBuffer};
 use super::texture::{Texture, Sampler};
 
 use super::errors::{Error, Result};
@@ -106,6 +106,44 @@ impl<T: AsStd140> UniformBufferRef<T>
 }
 
 impl<T: AsStd140> DescriptorRef for UniformBufferRef<T>
+{
+    fn get_write(&self, dst_set: Rc<DescriptorSet>, dst_binding: u32) -> WriteDescriptorSet {
+        let mut uniform_buffer_info = vec![];
+        for buf in self.uniform_buffers.iter() {
+            uniform_buffer_info.push(vk::DescriptorBufferInfo{
+                buffer: buf.get_buffer(),
+                offset: 0,
+                range: buf.len(),
+            });
+        }
+        WriteDescriptorSet::for_buffers(
+            vk::DescriptorType::UNIFORM_BUFFER,
+            uniform_buffer_info,
+            dst_set,
+            dst_binding,
+        )
+    }
+
+    fn get_type(&self) -> vk::DescriptorType {
+        vk::DescriptorType::UNIFORM_BUFFER
+    }
+}
+
+pub struct ComplexUniformBufferRef<T: WriteStd140>
+{
+    uniform_buffers: Vec<Rc<ComplexUniformBuffer<T>>>,
+}
+
+impl<T: WriteStd140> ComplexUniformBufferRef<T>
+{
+    pub fn new(uniform_buffers: Vec<Rc<ComplexUniformBuffer<T>>>) -> Self {
+        Self{
+            uniform_buffers,
+        }
+    }
+}
+
+impl<T: WriteStd140> DescriptorRef for ComplexUniformBufferRef<T>
 {
     fn get_write(&self, dst_set: Rc<DescriptorSet>, dst_binding: u32) -> WriteDescriptorSet {
         let mut uniform_buffer_info = vec![];
