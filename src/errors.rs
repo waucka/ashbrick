@@ -34,6 +34,7 @@ pub enum Error {
     ZeroSizeBuffer,
     InvalidBufferCopy(u64, u64),
     InvalidUniformWrite(usize, usize),
+    NeedResize,
 }
 
 impl Error {
@@ -137,6 +138,7 @@ impl Display for Error {
             ZeroSizeBuffer => write!(f, "Buffer size must be greater than zero."),
             InvalidBufferCopy(buf1, buf2) => write!(f, "Tried to copy a {} byte buffer into a {} byte buffer.", buf1, buf2),
             InvalidUniformWrite(buf1, buf2) => write!(f, "Tried to write {} bytes to a {}-byte uniform buffer.", buf1, buf2),
+            NeedResize => write!(f, "Framebuffer needs resize"),
         }
     }
 }
