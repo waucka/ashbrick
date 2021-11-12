@@ -123,6 +123,10 @@ impl Presenter {
         self.swapchain.as_ref().unwrap().frames[img_ref.idx as usize].imageview.view
     }
 
+    pub fn get_num_swapchain_images(&self) -> usize {
+        self.swapchain.as_ref().unwrap().frames.len()
+    }
+
     #[allow(unused)]
     pub fn set_desired_fps(&mut self, desired_fps: u32) {
         self.desired_fps = desired_fps;
