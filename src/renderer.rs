@@ -1191,6 +1191,7 @@ impl AttachmentInfoSet {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct AttachmentRef {
     idx: usize,
 }
