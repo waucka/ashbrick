@@ -251,7 +251,6 @@ impl Queue {
         self.can_present
     }
 
-    #[allow(unused)]
     pub fn can_do_compute(&self) -> bool {
         self.flags.contains(vk::QueueFlags::COMPUTE)
     }
@@ -260,7 +259,6 @@ impl Queue {
         self.flags.contains(vk::QueueFlags::TRANSFER)
     }
 
-    #[allow(unused)]
     pub fn can_do_sparse_binding(&self) -> bool {
         self.flags.contains(vk::QueueFlags::SPARSE_BINDING)
     }
@@ -321,7 +319,6 @@ impl DeviceBuilder {
         self
     }
 
-    #[allow(unused)]
     pub fn with_extension(mut self, extension_name: &str) -> Self {
         self.extensions.push(extension_name.to_string());
         self
@@ -362,7 +359,6 @@ impl Device {
         }
     }
 
-    #[allow(unused)]
     pub fn get_max_usable_sample_count(
         &self,
     ) -> vk::SampleCountFlags {
@@ -422,7 +418,6 @@ impl Device {
         self.inner.get_default_graphics_pool()
     }
 
-    #[allow(unused)]
     pub fn get_default_present_queue(&self) -> Rc<Queue> {
         self.inner.get_default_present_queue()
     }
@@ -435,7 +430,6 @@ impl Device {
         self.inner.get_default_transfer_pool()
     }
 
-    #[allow(unused)]
     pub fn get_queues(&self) -> Vec<Rc<Queue>> {
         let mut queues = vec![];
         for q in &self.inner.queue_set.borrow().queues {
@@ -495,13 +489,9 @@ impl Device {
 }
 
 pub enum MemoryUsage {
-    #[allow(dead_code)]
     Unknown,
-    #[allow(dead_code)]
     GpuOnly,
-    #[allow(dead_code)]
     CpuToGpu,
-    #[allow(dead_code)]
     GpuToCpu,
 }
 
@@ -849,7 +839,6 @@ impl InnerDevice {
         Rc::clone(&queue_set.pools[queue_set.default_graphics_queue_idx])
     }
 
-    #[allow(unused)]
     fn get_default_present_queue(&self) -> Rc<Queue> {
         let queue_set = self.queue_set.borrow();
         Rc::clone(&queue_set.queues[queue_set.default_present_queue_idx])

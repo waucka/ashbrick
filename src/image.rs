@@ -25,17 +25,14 @@ pub struct ImageBuilder {
 }
 
 impl ImageBuilder {
-    #[allow(unused)]
     pub fn new1d(name: &str, length: usize) -> Self {
         ImageBuilder::new(name, vec![length as u32], vk::ImageType::TYPE_1D)
     }
 
-    #[allow(unused)]
     pub fn new2d(name: &str, width: usize, height: usize) -> Self {
         ImageBuilder::new(name, vec![width as u32, height as u32], vk::ImageType::TYPE_2D)
     }
 
-    #[allow(unused)]
     pub fn new3d(name: &str, width: usize, height: usize, depth: usize) -> Self {
         ImageBuilder::new(name, vec![width as u32, height as u32, depth as u32], vk::ImageType::TYPE_3D)
     }
@@ -385,7 +382,6 @@ impl Image {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn copy_buffer(
         buffer: Rc<UploadSourceBuffer>,
         dst_img: Rc<Image>,

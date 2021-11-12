@@ -74,7 +74,6 @@ impl<V> VertexShader<V> where V: Vertex {
         })
     }
 
-    #[allow(unused)]
     pub fn from_spv_bytes(device: &Device, spv_bytes: Vec<u8>) -> Result<Self> {
         Ok(Self {
             shader: Shader::from_spv_bytes(device.inner.clone(), spv_bytes)?,
@@ -84,7 +83,6 @@ impl<V> VertexShader<V> where V: Vertex {
 
     // This always returns true because your code won't compile
     // if the shader isn't compatible.
-    #[allow(unused)]
     pub fn is_compatible(&self, _vertices: &[V]) -> bool {
         return true;
     }
@@ -107,7 +105,6 @@ impl FragmentShader {
         })
     }
 
-    #[allow(unused)]
     pub fn from_spv_bytes(device: &Device, spv_bytes: Vec<u8>) -> Result<Self> {
         Ok(Self {
             shader: Shader::from_spv_bytes(device.inner.clone(), spv_bytes)?

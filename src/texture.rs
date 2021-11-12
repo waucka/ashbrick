@@ -21,7 +21,6 @@ pub struct Texture {
 }
 
 impl Texture {
-    #[allow(dead_code)]
     pub fn from_float_tex(
         device: &Device,
         name: &str,
@@ -100,7 +99,6 @@ impl Texture {
         })
     }
 
-    #[allow(dead_code)]
     pub fn from_exr_1d(
         device: &Device,
         name: &str,
@@ -265,7 +263,6 @@ impl Texture {
         })
     }
 
-    #[allow(dead_code)]
     pub fn from_image_builder(
         device: &Device,
         aspect: vk::ImageAspectFlags,
@@ -304,7 +301,6 @@ impl Texture {
         })
     }
 
-    #[allow(unused)]
     pub fn get_image_debug_str(&self) -> String {
         format!("{:?}", self.image.img)
     }
@@ -538,14 +534,12 @@ impl Drop for Sampler {
     }
 }
 
-#[allow(unused)]
 pub struct CombinedTexture {
     sampler: Sampler,
     texture: Texture,
 }
 
 impl CombinedTexture {
-    #[allow(unused)]
     pub fn new(
         sampler: Sampler,
         texture: Texture,
@@ -556,7 +550,6 @@ impl CombinedTexture {
         }
     }
 
-    #[allow(unused)]
     pub fn get_descriptor_info(&self) -> vk::DescriptorImageInfo {
         vk::DescriptorImageInfo{
             sampler: self.sampler.sampler,

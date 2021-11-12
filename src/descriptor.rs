@@ -134,7 +134,6 @@ pub struct TextureRef {
 }
 
 impl TextureRef {
-    #[allow(unused)]
     pub fn new(textures: Vec<Rc<Texture>>) -> Self {
         Self{
             textures,
@@ -171,7 +170,6 @@ pub struct CombinedRef {
 }
 
 impl CombinedRef {
-    #[allow(unused)]
     pub fn new(sampler: Rc<Sampler>, textures: Vec<Rc<Texture>>) -> Self {
         Self{
             samplers: vec![sampler],

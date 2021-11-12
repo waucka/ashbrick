@@ -309,7 +309,6 @@ impl CommandBuffer {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn reset(&mut self) -> Result<()> {
         unsafe {
             Error::wrap_result(
@@ -340,11 +339,9 @@ impl CommandBuffer {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn run_oneshot<T>(
         device: &Device,
         pool: Rc<CommandPool>,
-        wait_stage: vk::PipelineStageFlags,
         cmd_fn: T,
     ) -> Result<()>
     where
@@ -588,7 +585,6 @@ impl BufferWriter {
         );
     }
 
-    #[allow(unused)]
     pub fn blit_image(
         &mut self,
         img_src: Rc<Image>,

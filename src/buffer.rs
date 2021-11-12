@@ -342,7 +342,6 @@ pub struct IndexBuffer {
 impl super::GraphicsResource for IndexBuffer {}
 
 impl IndexBuffer {
-    #[allow(unused)]
     pub fn new(
         device: &Device,
         name: &str,

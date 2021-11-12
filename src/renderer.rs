@@ -127,7 +127,6 @@ impl Presenter {
         self.swapchain.as_ref().unwrap().frames.len()
     }
 
-    #[allow(unused)]
     pub fn set_desired_fps(&mut self, desired_fps: u32) {
         self.desired_fps = desired_fps;
     }
@@ -458,7 +457,6 @@ impl PipelineParameters {
         self
     }
 
-    #[allow(unused)]
     pub fn with_topology(mut self, topology: vk::PrimitiveTopology) -> Self {
         self.topology = topology;
         self
@@ -469,7 +467,6 @@ impl PipelineParameters {
         self
     }
 
-    #[allow(unused)]
     pub fn with_primitive_restart(mut self) -> Self {
         self.primitive_restart_enable = vk::TRUE;
         self
@@ -883,7 +880,6 @@ impl AttachmentDescription {
         }
     }
 
-    #[allow(unused)]
     pub fn standard_color_render_target(
         format: vk::Format,
         is_multisampled: bool,
@@ -908,7 +904,6 @@ impl AttachmentDescription {
         }
     }
 
-    #[allow(unused)]
     pub fn standard_color_intermediate(
         format: vk::Format,
         is_multisampled: bool,
