@@ -1551,6 +1551,16 @@ pub struct RenderPassData {
 }
 
 impl RenderPassData {
+    // TODO: I don't think this is the right API.  Should I conceal the Framebuffer?
+    //       Should RenderPass become an internal-focused class and RenderPassData
+    //       be renamed to RenderPass?  I'm not sure.
+    pub fn new(render_pass: RenderPass, framebuffer: Framebuffer) -> Self {
+        Self{
+            render_pass,
+            framebuffer,
+        }
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
         let new_framebuffer = self.render_pass.create_framebuffer(width, height)?;
         self.framebuffer = new_framebuffer;
