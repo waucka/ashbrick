@@ -17,6 +17,11 @@ use super::command_buffer::CommandBuffer;
 
 use super::errors::{Error, Result};
 
+#[derive(Copy, Clone)]
+pub struct SwapchainImageRef {
+    pub (crate) idx: u32,
+}
+
 pub struct Presenter {
     device: Rc<InnerDevice>,
     swapchain: Option<Swapchain>,
@@ -95,8 +100,8 @@ impl Presenter {
         self.swapchain.as_ref().unwrap().swapchain_extent
     }
 
-    pub (crate) fn get_swapchain_image_view(&self, idx: usize) -> vk::ImageView {
-        self.swapchain.as_ref().unwrap().frames[idx].imageview.view
+    pub (crate) fn get_swapchain_image_view(&self, img_ref: SwapchainImageRef) -> vk::ImageView {
+        self.swapchain.as_ref().unwrap().frames[img_ref.idx as usize].imageview.view
     }
 
     #[allow(unused)]
@@ -131,11 +136,12 @@ impl Presenter {
         Ok(self.last_frame.elapsed())
     }
 
-    pub fn acquire_next_image<F>(&mut self, render_pass: &RenderPass, viewport_update: &mut F) -> Result<u32>
+    // TODO: I'm having second thoughts about having viewport updates happen here.
+    pub fn acquire_next_image<F>(&mut self, render_pass: &RenderPass, viewport_update: &mut F) -> Result<SwapchainImageRef>
     where
         F: FnMut(usize, usize) -> Result<()>
     {
-        let (image_index, _is_sub_optimal) = {
+        let image_index = {
             let result = self.device
                 .acquire_next_image(
                     self.swapchain.as_ref().unwrap().swapchain,
@@ -144,7 +150,15 @@ impl Presenter {
                     vk::Fence::null(),
                 );
             match result {
-                Ok(res) => res,
+                Ok((idx, is_sub_optimal)) => if is_sub_optimal {
+                    self.fit_to_window()?;
+                    let (width, height) = self.get_dimensions();
+                    viewport_update(width, height)?;
+                    // TODO: I hope I don't regret doing this.
+                    return self.acquire_next_image(render_pass, viewport_update);
+                } else {
+                    SwapchainImageRef{ idx }
+                },
                 Err(vk_result) => match vk_result {
                     vk::Result::ERROR_OUT_OF_DATE_KHR => {
                         self.fit_to_window()?;
