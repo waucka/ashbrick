@@ -629,27 +629,7 @@ impl BufferWriter {
             filter,
         );
     }
-}
 
-impl Drop for BufferWriter {
-    fn drop(&mut self) {
-        unsafe {
-            if let Err(e) = self.device.device.end_command_buffer(self.command_buffer) {
-                println!("Failed to end command buffer: {:?}", e);
-            }
-        }
-    }
-}
-
-pub struct RenderPassWriter {
-    device: Rc<InnerDevice>,
-    command_buffer: vk::CommandBuffer,
-    auto_end: bool,
-    allow_subpass_increment: bool,
-    dependencies: Vec<Rc<dyn GraphicsResource>>,
-}
-
-impl RenderPassWriter {
     pub fn bind_pipeline<V: Vertex + 'static>(
         &mut self,
         pipeline: Rc<Pipeline<V>>,
@@ -689,7 +669,27 @@ impl RenderPassWriter {
             );
         }
     }
+}
 
+impl Drop for BufferWriter {
+    fn drop(&mut self) {
+        unsafe {
+            if let Err(e) = self.device.device.end_command_buffer(self.command_buffer) {
+                println!("Failed to end command buffer: {:?}", e);
+            }
+        }
+    }
+}
+
+pub struct RenderPassWriter {
+    device: Rc<InnerDevice>,
+    command_buffer: vk::CommandBuffer,
+    auto_end: bool,
+    allow_subpass_increment: bool,
+    dependencies: Vec<Rc<dyn GraphicsResource>>,
+}
+
+impl RenderPassWriter {
     pub fn draw<T: 'static>(
         &mut self,
         vertex_buffer: Rc<VertexBuffer<T>>,
