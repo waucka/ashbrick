@@ -278,6 +278,17 @@ impl Presenter {
             frame_id,
         })
     }
+
+    pub fn wait_for_rendering(&mut self) -> Result<()> {
+        for submission in &mut self.submissions {
+            if let Some(submission) = submission {
+                submission.render_finished_fence.wait(u64::MAX)?;
+                submission.render_finished_fence.reset()?;
+            }
+            *submission = None;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
