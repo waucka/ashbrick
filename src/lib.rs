@@ -990,8 +990,8 @@ fn create_logical_device(
         physical_device_features.shader_int64 = vk::TRUE;
     }
 
-    let mut device_address_features = vk::PhysicalDeviceBufferAddressFeaturesEXT{
-        s_type: vk::StructureType::PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT,
+    let mut device_address_features = vk::PhysicalDeviceBufferDeviceAddressFeatures{
+        s_type: vk::StructureType::PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
         p_next: ptr::null_mut(),
         buffer_device_address: vk::TRUE,
         ..Default::default()
@@ -1004,7 +1004,7 @@ fn create_logical_device(
         ..Default::default()
     };
 
-    let descriptor_indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures{
+    let mut descriptor_indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures{
         s_type: vk::StructureType::PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
         p_next: (&mut imageless_framebuffer_features as *mut _) as *mut c_void,
         runtime_descriptor_array: vk::TRUE,
@@ -1021,6 +1021,12 @@ fn create_logical_device(
     physical_device_features.shader_storage_buffer_array_dynamic_indexing = vk::TRUE;
     physical_device_features.shader_storage_image_array_dynamic_indexing = vk::TRUE;
     physical_device_features.sampler_anisotropy = vk::TRUE;
+
+    let physical_device_features2 = vk::PhysicalDeviceFeatures2{
+        s_type: vk::StructureType::PHYSICAL_DEVICE_FEATURES_2,
+        p_next: (&mut descriptor_indexing_features as *mut _) as *mut _,
+        features: physical_device_features,
+    };
 
     let required_validation_layer_raw_names: Vec<CString> = VALIDATION
         .required_validation_layers
@@ -1044,7 +1050,7 @@ fn create_logical_device(
         enable_extension_names.push(ext.as_ptr());
     }
 
-    let p_next: *const c_void = &descriptor_indexing_features as *const _ as *const _;
+    let p_next: *const c_void = &physical_device_features2 as *const _ as *const _;
 
     let device_create_info = vk::DeviceCreateInfo{
         s_type: vk::StructureType::DEVICE_CREATE_INFO,
@@ -1064,7 +1070,7 @@ fn create_logical_device(
         },
         enabled_extension_count: enable_extension_names.len() as u32,
         pp_enabled_extension_names: enable_extension_names.as_ptr(),
-        p_enabled_features: &physical_device_features,
+        p_enabled_features: ptr::null(),
     };
 
     let device: ash::Device = unsafe {
