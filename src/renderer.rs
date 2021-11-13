@@ -189,6 +189,11 @@ impl Presenter {
         Ok(())
     }
 
+    pub fn create_command_buffer_set(&self) -> TemporaryCommandBufferSet {
+        let size = self.get_num_swapchain_images();
+        TemporaryCommandBufferSet::new(size)
+    }
+
     pub fn acquire_frame(&mut self) -> Result<Frame>
     {
         let image_available_semaphore = Rc::clone(self.image_available_semaphores.get(self.current_frame));
@@ -224,7 +229,7 @@ impl Presenter {
         })
     }
 
-    pub fn present(&mut self, frame: Frame) -> Result<()> {
+    pub fn present(&mut self, frame: Frame, mut buffer_set: Option<&mut TemporaryCommandBufferSet>) -> Result<()> {
         let Frame{
             command_buffer,
             wait_stage,
@@ -236,6 +241,9 @@ impl Presenter {
         } = frame;
         let inflight_fence = &mut self.inflight_fences[swapchain_image.idx as usize];
         inflight_fence.wait(u64::MAX)?;
+        if let Some(bufset) = &mut buffer_set {
+            bufset.remove_buffer(swapchain_image);
+        }
         inflight_fence.reset()?;
         inflight_fence.mark_used();
         let presentation_wait_semaphores = [render_finished_semaphore.semaphore];
@@ -247,7 +255,9 @@ impl Presenter {
                 Some(Rc::clone(&inflight_fence.fence)),
             );
             match submit_res {
-                Ok(_) => (),
+                Ok(_) => if let Some(bufset) = &mut buffer_set {
+                    bufset.insert_buffer(swapchain_image, command_buffer);
+                },
                 Err(e) => {
                     // Mark the fence as unused, since the queue submission won't be signalling the fence.
                     // Since the fence won't get signalled, the next wait() call will wait forever if
@@ -322,6 +332,32 @@ impl Frame {
 
     pub fn get_swapchain_image(&self) -> SwapchainImageRef {
         self.swapchain_image
+    }
+}
+
+// This structure is for holding one-shot command buffers until they have finished rendering.
+pub struct TemporaryCommandBufferSet {
+    cmd_bufs: Vec<Option<Rc<CommandBuffer>>>,
+}
+
+impl TemporaryCommandBufferSet {
+    fn new(size: usize) -> Self {
+        Self{
+            cmd_bufs: vec![None; size],
+        }
+    }
+
+    pub fn insert_buffer(&mut self, swapchain_image: SwapchainImageRef, cmd_buf: Rc<CommandBuffer>) {
+        self.cmd_bufs[swapchain_image.idx as usize] = Some(cmd_buf);
+    }
+
+    pub fn remove_buffer(&mut self, swapchain_image: SwapchainImageRef) -> Option<Rc<CommandBuffer>> {
+        let old = match &self.cmd_bufs[swapchain_image.idx as usize] {
+            Some(cmd_buf) => Some(Rc::clone(cmd_buf)),
+            None => None,
+        };
+        self.cmd_bufs[swapchain_image.idx as usize] = None;
+        old
     }
 }
 
