@@ -23,40 +23,13 @@ pub struct SwapchainImageRef {
     pub (crate) idx: u32,
 }
 
-struct InflightFence {
-    fence: Rc<Fence>,
-    in_use: bool,
-}
-
-impl InflightFence {
-    pub fn wait(&self, timeout: u64) -> Result<()> {
-        if self.in_use {
-            self.fence.wait(timeout)
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn reset(&self) -> Result<()> {
-        self.fence.reset()
-    }
-
-    pub fn mark_used(&mut self) {
-        self.in_use = true;
-    }
-
-    pub fn mark_unused(&mut self) {
-        self.in_use = false;
-    }
-}
-
 pub struct Presenter {
     device: Rc<InnerDevice>,
     swapchain: Option<Swapchain>,
 
     image_available_semaphores: PerFrameSet<Rc<Semaphore>>,
     render_finished_semaphores: PerFrameSet<Rc<Semaphore>>,
-    inflight_fences: Vec<InflightFence>,
+    submissions: Vec<Option<CommandBufferSubmissionSet>>,
     last_frame: Instant,
     last_frame_duration: Duration,
     desired_fps: u32,
@@ -87,13 +60,7 @@ impl Presenter {
         let num_swapchain_images = swapchain.get_num_images();
         dbg!(num_swapchain_images);
 
-        let mut inflight_fences = Vec::with_capacity(num_swapchain_images);
-        for _ in 0..num_swapchain_images {
-            inflight_fences.push(InflightFence{
-                fence: Rc::new(Fence::new(device, true)?),
-                in_use: false,
-            });
-        }
+        let submissions = vec![None; num_swapchain_images];
 
         Ok(Self{
             device: device.inner.clone(),
@@ -101,7 +68,7 @@ impl Presenter {
 
             image_available_semaphores,
             render_finished_semaphores,
-            inflight_fences,
+            submissions,
             last_frame: Instant::now(),
             last_frame_duration: Duration::new(0, 0),
             desired_fps,
@@ -189,12 +156,7 @@ impl Presenter {
         Ok(())
     }
 
-    pub fn create_command_buffer_set(&self) -> TemporaryCommandBufferSet {
-        let size = self.get_num_swapchain_images();
-        TemporaryCommandBufferSet::new(size)
-    }
-
-    pub fn acquire_frame(&mut self) -> Result<Frame>
+    pub fn acquire_frame(&mut self, render_finished_fence: Rc<Fence>) -> Result<Frame>
     {
         let image_available_semaphore = Rc::clone(self.image_available_semaphores.get(self.current_frame));
         let render_finished_semaphore = Rc::clone(self.render_finished_semaphores.get(self.current_frame));
@@ -219,58 +181,67 @@ impl Presenter {
         let frame_id = self.current_frame;
         self.current_frame.advance();
         Ok(Frame{
-            command_buffer: None,
-            wait_stage: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            wait_for_next_frame: false,
+            submission_set: CommandBufferSubmissionSet::new(
+                render_finished_fence,
+                image_available_semaphore,
+                render_finished_semaphore,
+            ),
             swapchain_image,
-            image_available_semaphore,
-            render_finished_semaphore,
             frame_id,
+            wait_for_next_frame: false,
         })
     }
 
-    pub fn present(&mut self, frame: Frame, mut buffer_set: Option<&mut TemporaryCommandBufferSet>) -> Result<()> {
+    pub fn forget_submission(&mut self, swapchain_image: SwapchainImageRef) {
+        self.submissions[swapchain_image.idx as usize] = None;
+    }
+
+    // Returns submission results for each submitted framebuffer.
+    pub fn present(&mut self, frame: Frame) -> Result<SubmissionResults> {
         let Frame{
-            command_buffer,
-            wait_stage,
-            wait_for_next_frame,
+            submission_set,
             swapchain_image,
-            image_available_semaphore,
-            render_finished_semaphore,
-            frame_id: _,
+            frame_id,
+            wait_for_next_frame,
         } = frame;
-        let inflight_fence = &mut self.inflight_fences[swapchain_image.idx as usize];
-        inflight_fence.wait(u64::MAX)?;
-        if let Some(bufset) = &mut buffer_set {
-            bufset.remove_buffer(swapchain_image);
+        if self.submissions[swapchain_image.idx as usize].is_some() {
+            if let Some(submission) = &mut self.submissions[swapchain_image.idx as usize] {
+                submission.render_finished_fence.wait(u64::MAX)?;
+                submission.render_finished_fence.reset()?;
+            }
+            self.submissions[swapchain_image.idx as usize] = None;
         }
-        inflight_fence.reset()?;
-        inflight_fence.mark_used();
+        let render_finished_semaphore = Rc::clone(self.render_finished_semaphores.get(frame_id));
         let presentation_wait_semaphores = [render_finished_semaphore.semaphore];
 
-        if let Some(command_buffer) = command_buffer {
-            let submit_res = command_buffer.submit_synced(
-                &[(wait_stage, image_available_semaphore)],
-                &[render_finished_semaphore],
-                Some(Rc::clone(&inflight_fence.fence)),
-            );
-            match submit_res {
-                Ok(_) => if let Some(bufset) = &mut buffer_set {
-                    bufset.insert_buffer(swapchain_image, command_buffer);
-                },
-                Err(e) => {
-                    // Mark the fence as unused, since the queue submission won't be signalling the fence.
-                    // Since the fence won't get signalled, the next wait() call will wait forever if
-                    // we don't do this.
-                    inflight_fence.mark_unused();
-                    return Err(e);
-                },
+        let mut results = Vec::new();
+        for submission in &submission_set.submissions {
+            let CommandBufferSubmission{
+                command_buffer,
+                wait,
+                signal,
+                fence,
+            } = submission;
+            let mut wait_list = Vec::new();
+            for wait_spec in wait {
+                wait_list.push((wait_spec.wait_stage, Rc::clone(&wait_spec.semaphore)));
             }
-        } else {
-            // If the user didn't provide a command buffer for some reason,
-            // that will also cause fence problems.  Mark it as unused.
-            inflight_fence.mark_unused();
+            let mut signal_list = Vec::new();
+            for signal_spec in signal {
+                signal_list.push(Rc::clone(signal_spec));
+            }
+            let fence = match fence {
+                Some(f) => Some(Rc::clone(f)),
+                None => None,
+            };
+            results.push(command_buffer.submit_synced(
+                &wait_list,
+                &signal_list,
+                fence,
+            ));
         }
+        self.submissions[swapchain_image.idx as usize] = Some(submission_set);
+
         //println!("Presenting a frame...");
         //let start = std::time::Instant::now();
         let swapchains = [self.swapchain.as_ref().unwrap().swapchain];
@@ -289,76 +260,154 @@ impl Presenter {
             self.wait_for_next_frame();
         }
 
-        match self.device.queue_present(Rc::clone(&self.present_queue), &present_info){
-            Ok(_) => (),
+        let presentation_result = match self.device.queue_present(Rc::clone(&self.present_queue), &present_info){
+            Ok(_) => Ok(()),
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) |
-            Err(vk::Result::SUBOPTIMAL_KHR) => return Err(Error::NeedResize),
-            Err(e) => return Err(Error::wrap(e, "Failed to present")),
+            Err(vk::Result::SUBOPTIMAL_KHR) => Err(Error::NeedResize),
+            Err(e) => Err(Error::wrap(e, "Failed to present")),
         };
 
         self.last_frame_duration = self.last_frame.elapsed();
         self.last_frame = Instant::now();
         //println!("Presented frame in {}ns", start.elapsed().as_nanos());
-        Ok(())
+        Ok(SubmissionResults{
+            results,
+            presentation_result,
+            swapchain_image,
+            frame_id,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct CommandBufferWaitSpec {
+    wait_stage: vk::PipelineStageFlags,
+    semaphore: Rc<Semaphore>,
+}
+
+impl CommandBufferWaitSpec {
+    fn new(
+        wait_stage: vk::PipelineStageFlags,
+        semaphore: Rc<Semaphore>,
+    ) -> Self {
+        Self{
+            wait_stage,
+            semaphore,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CommandBufferSubmission {
+    command_buffer: Rc<CommandBuffer>,
+    wait: Vec<CommandBufferWaitSpec>,
+    signal: Vec<Rc<Semaphore>>,
+    fence: Option<Rc<Fence>>,
+}
+
+impl CommandBufferSubmission {
+    pub fn new(
+        command_buffer: Rc<CommandBuffer>,
+        wait: Vec<CommandBufferWaitSpec>,
+        signal: Vec<Rc<Semaphore>>,
+        fence: Option<Rc<Fence>>,
+    ) -> Self {
+        Self{
+            command_buffer,
+            wait,
+            signal,
+            fence,
+        }
+    }
+
+    pub fn add_wait(
+        &mut self,
+        wait_stage: vk::PipelineStageFlags,
+        semaphore: Rc<Semaphore>,
+    ) {
+        self.wait.push(CommandBufferWaitSpec::new(wait_stage, semaphore));
+    }
+
+    pub fn add_signal(
+        &mut self,
+        semaphore: Rc<Semaphore>,
+    ) {
+        self.signal.push(semaphore);
+    }
+
+    pub fn set_fence(
+        &mut self,
+        fence: Rc<Fence>,
+    ) {
+        self.fence = Some(fence);
+    }
+}
+
+#[derive(Clone)]
+pub struct CommandBufferSubmissionSet {
+    submissions: Vec<CommandBufferSubmission>,
+    render_finished_fence: Rc<Fence>,
+    image_available_semaphore: Rc<Semaphore>,
+    render_finished_semaphore: Rc<Semaphore>,
+}
+
+impl CommandBufferSubmissionSet {
+    fn new(
+        render_finished_fence: Rc<Fence>,
+        image_available_semaphore: Rc<Semaphore>,
+        render_finished_semaphore: Rc<Semaphore>,
+    ) -> Self {
+        Self{
+            submissions: Vec::new(),
+            render_finished_fence,
+            image_available_semaphore,
+            render_finished_semaphore,
+        }
+    }
+
+    pub fn add_submission(&mut self, submission: CommandBufferSubmission) {
+        self.submissions.push(submission);
+    }
+
+    pub fn get_image_available_semaphore(&self) -> Rc<Semaphore> {
+        Rc::clone(&self.image_available_semaphore)
+    }
+
+    pub fn get_render_finished_semaphore(&self) -> Rc<Semaphore> {
+        Rc::clone(&self.render_finished_semaphore)
     }
 }
 
 pub struct Frame {
-    command_buffer: Option<Rc<CommandBuffer>>,
-    wait_stage: vk::PipelineStageFlags,
-    wait_for_next_frame: bool,
+    submission_set: CommandBufferSubmissionSet,
     swapchain_image: SwapchainImageRef,
-    image_available_semaphore: Rc<Semaphore>,
-    render_finished_semaphore: Rc<Semaphore>,
     frame_id: FrameId,
+    wait_for_next_frame: bool,
 }
 
 impl Frame {
-    pub fn set_command_buffer(&mut self, command_buffer: Rc<CommandBuffer>) {
-        self.command_buffer = Some(command_buffer);
+    pub fn get_submission_set(&mut self) -> &mut CommandBufferSubmissionSet {
+        &mut self.submission_set
     }
 
-    pub fn set_wait_stage(&mut self, wait_stage: vk::PipelineStageFlags) {
-        self.wait_stage = wait_stage;
-    }
-
-    pub fn set_wait_for_next_frame(&mut self, wait_for_next_frame: bool) {
-        self.wait_for_next_frame = wait_for_next_frame;
+    pub fn get_swapchain_image(&self) -> SwapchainImageRef {
+        self.swapchain_image
     }
 
     pub fn get_frame_id(&self) -> FrameId {
         self.frame_id
     }
 
-    pub fn get_swapchain_image(&self) -> SwapchainImageRef {
-        self.swapchain_image
+    pub fn enable_wait_for_next_frame(&mut self) {
+        self.wait_for_next_frame = true;
     }
 }
 
-// This structure is for holding one-shot command buffers until they have finished rendering.
-pub struct TemporaryCommandBufferSet {
-    cmd_bufs: Vec<Option<Rc<CommandBuffer>>>,
-}
-
-impl TemporaryCommandBufferSet {
-    fn new(size: usize) -> Self {
-        Self{
-            cmd_bufs: vec![None; size],
-        }
-    }
-
-    pub fn insert_buffer(&mut self, swapchain_image: SwapchainImageRef, cmd_buf: Rc<CommandBuffer>) {
-        self.cmd_bufs[swapchain_image.idx as usize] = Some(cmd_buf);
-    }
-
-    pub fn remove_buffer(&mut self, swapchain_image: SwapchainImageRef) -> Option<Rc<CommandBuffer>> {
-        let old = match &self.cmd_bufs[swapchain_image.idx as usize] {
-            Some(cmd_buf) => Some(Rc::clone(cmd_buf)),
-            None => None,
-        };
-        self.cmd_bufs[swapchain_image.idx as usize] = None;
-        old
-    }
+pub struct SubmissionResults {
+    pub results: Vec<Result<()>>,
+    pub presentation_result: Result<()>,
+    pub swapchain_image: SwapchainImageRef,
+    pub frame_id: FrameId,
 }
 
 struct FrameData {
