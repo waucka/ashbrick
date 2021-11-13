@@ -7,7 +7,7 @@ pub enum Error {
     External(Box<dyn std::error::Error + 'static>, String),
     InternalError(String),
     VulkanError{
-        vk_msg: String,
+        vk_result: vk::Result,
         msg: String,
     },
     WindowingError(String),
@@ -68,10 +68,9 @@ impl Error {
     }
 
     pub fn wrap(vk_result: ash::vk::Result, msg_str: &str) -> Self {
-        let vk_msg = format!("{}", vk_result);
         let msg = String::from(msg_str);
         Error::VulkanError{
-            vk_msg,
+            vk_result,
             msg,
         }
     }
@@ -105,10 +104,10 @@ impl Display for Error {
             External(err, msg) => write!(f, "{}: {}", err, msg),
             InternalError(msg) => write!(f, "Internal error: {}", msg),
             VulkanError{
-                vk_msg,
+                vk_result,
                 msg,
             } => {
-                write!(f, "{}: {}", msg, vk_msg)
+                write!(f, "{}: {}", msg, vk_result)
             },
             WindowingError(msg) => write!(f, "Windowing error: {}", msg),
             NoFormatsAvailable{

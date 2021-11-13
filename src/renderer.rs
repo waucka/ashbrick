@@ -299,15 +299,40 @@ impl Presenter {
         })
     }
 
-    pub fn wait_for_rendering(&mut self) -> Result<()> {
+    pub fn wait_for_rendering(&mut self, timeout: u64) -> Vec<Result<bool>> {
+        let mut results = Vec::new();
         for submission in &mut self.submissions {
             if let Some(submission) = submission {
-                submission.render_finished_fence.wait(u64::MAX)?;
-                submission.render_finished_fence.reset()?;
+                let result = match submission.render_finished_fence.wait(timeout) {
+                    Ok(_) => Ok(true),
+                    Err(Error::VulkanError{
+                        vk_result: vk::Result::TIMEOUT,
+                        msg: _,
+                    }) => Ok(false),
+                    // This isn't actually an external error, but whatever.  I want to add context.
+                    Err(e) => Err(Error::External(
+                        Box::new(e),
+                        format!("Failed to wait for fence {}", submission.render_finished_fence.name()),
+                    )),
+                };
+                if result.is_err() {
+                    results.push(result);
+                } else {
+                    results.push(
+                        match submission.render_finished_fence.reset() {
+                            Ok(_) => Ok(true),
+                            // Again, not an external error, but I want to add context.
+                            Err(e) => Err(Error::External(
+                                Box::new(e),
+                                format!("Failed to reset fence {}", submission.render_finished_fence.name()),
+                            )),
+                        }
+                    );
+                }
             }
             *submission = None;
         }
-        Ok(())
+        results
     }
 }
 
