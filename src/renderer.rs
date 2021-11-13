@@ -280,7 +280,7 @@ impl Presenter {
 }
 
 #[derive(Clone)]
-pub struct CommandBufferWaitSpec {
+struct CommandBufferWaitSpec {
     wait_stage: vk::PipelineStageFlags,
     semaphore: Rc<Semaphore>,
 }
@@ -308,14 +308,12 @@ pub struct CommandBufferSubmission {
 impl CommandBufferSubmission {
     pub fn new(
         command_buffer: Rc<CommandBuffer>,
-        wait: Vec<CommandBufferWaitSpec>,
-        signal: Vec<Rc<Semaphore>>,
         fence: Option<Rc<Fence>>,
     ) -> Self {
         Self{
             command_buffer,
-            wait,
-            signal,
+            wait: Vec::new(),
+            signal: Vec::new(),
             fence,
         }
     }
