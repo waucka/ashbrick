@@ -18,6 +18,7 @@ pub struct Texture {
     pub (crate) image: Rc<Image>,
     pub (crate) image_view: Rc<ImageView>,
     mip_levels: u32,
+    name: String,
 }
 
 impl Texture {
@@ -96,6 +97,7 @@ impl Texture {
             image,
             image_view,
             mip_levels,
+            name: String::from(name),
         })
     }
 
@@ -199,6 +201,7 @@ impl Texture {
             image,
             image_view,
             mip_levels,
+            name: String::from(name),
         })
     }
 
@@ -206,6 +209,7 @@ impl Texture {
     pub fn from_egui(
         device: &Device,
         egui_texture: &Arc<egui::paint::Texture>,
+        name: &str,
     ) -> anyhow::Result<Self> {
         let (image_width, image_height) = (egui_texture.width as u32, egui_texture.height as u32);
         let image_size =
@@ -260,6 +264,7 @@ impl Texture {
             image,
             image_view,
             mip_levels,
+            name: String::from(name),
         })
     }
 
@@ -269,6 +274,7 @@ impl Texture {
         mip_levels: u32,
         desired_layout: vk::ImageLayout,
         builder: ImageBuilder,
+        name: &str,
     ) -> Result<Self> {
         Self::from_image_builder_internal(
             device.inner.clone(),
@@ -276,6 +282,7 @@ impl Texture {
             mip_levels,
             desired_layout,
             builder,
+            name,
         )
     }
 
@@ -285,6 +292,7 @@ impl Texture {
         mip_levels: u32,
         desired_layout: vk::ImageLayout,
         builder: ImageBuilder,
+        name: &str,
     ) -> Result<Self> {
         let mut image = Image::new_internal(device, builder)?;
         image.transition_layout(vk::ImageLayout::UNDEFINED, desired_layout, mip_levels)?;
@@ -298,6 +306,7 @@ impl Texture {
             image,
             image_view,
             mip_levels,
+            name: String::from(name),
         })
     }
 
@@ -370,7 +379,13 @@ impl Texture {
         Self::from_image_data(device, name, &image_data, format, mipmapped)
     }
 
-    pub fn from_image_data(device: &Device, name: &str, image_data: &ImageData, format: vk::Format, mipmapped: bool) -> Result<Self> {
+    pub fn from_image_data(
+        device: &Device,
+        name: &str,
+        image_data: &ImageData,
+        format: vk::Format,
+        mipmapped: bool,
+    ) -> Result<Self> {
         let (image_width, image_height) = (image_data.width, image_data.height);
         let size_of_pixel = image_data.bytes_per_channel * image_data.channels_per_pixel;
         let image_size =
@@ -446,6 +461,7 @@ impl Texture {
             image,
             image_view,
             mip_levels,
+            name: String::from(name),
         })
     }
 
@@ -463,6 +479,12 @@ impl Texture {
 
     pub fn get_extent(&self) -> vk::Extent3D {
         self.image.extent
+    }
+}
+
+impl super::NamedResource for Texture {
+    fn name(&self) -> &str {
+        &self.name
     }
 }
 

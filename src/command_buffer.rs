@@ -17,6 +17,7 @@ use super::errors::{Error, Result};
 
 pub struct SecondaryCommandBuffer {
     buf: RefCell<CommandBuffer>,
+    name: String,
 }
 
 impl super::GraphicsResource for SecondaryCommandBuffer {}
@@ -25,6 +26,7 @@ impl SecondaryCommandBuffer {
     pub fn new(
         device: &Device,
         pool: Rc<CommandPool>,
+        name: &str,
     ) -> Result<Rc<SecondaryCommandBuffer>> {
         let secondary = Rc::new(
             SecondaryCommandBuffer{
@@ -32,7 +34,11 @@ impl SecondaryCommandBuffer {
                     Rc::clone(&device.inner),
                     vk::CommandBufferLevel::SECONDARY,
                     pool,
+                    // Yeah, it's a little weird for the CommandBuffer object
+                    // and this holder object to have the same name, but whatever.
+                    name,
                 )?),
+                name: String::from(name),
             });
         Ok(secondary)
     }
@@ -79,6 +85,12 @@ impl Drop for SecondaryCommandBuffer {
     fn drop(&mut self) {
         // Drop has been implemented solely so that SecondaryCommandBuffers can be recorded as
         // dependencies for CommandBuffers.
+    }
+}
+
+impl super::NamedResource for SecondaryCommandBuffer {
+    fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -156,20 +168,23 @@ pub struct CommandBuffer {
     // This vector stores references to things that shouldn't be destroyed until
     // the command buffer has been destroyed.
     dependencies: Vec<Rc<dyn GraphicsResource>>,
+    name: String,
 }
 
 impl CommandBuffer {
     pub fn new(
         device: &Device,
         pool: Rc<CommandPool>,
+        name: &str,
     ) -> Result<Self> {
-        CommandBuffer::from_inner_device(device.inner.clone(), vk::CommandBufferLevel::PRIMARY, pool)
+        CommandBuffer::from_inner_device(device.inner.clone(), vk::CommandBufferLevel::PRIMARY, pool, name)
     }
 
     fn from_inner_device(
         device: Rc<InnerDevice>,
         level: vk::CommandBufferLevel,
         pool: Rc<CommandPool>,
+        name: &str,
     ) -> Result<Self> {
         let command_buffer_allocate_info = vk::CommandBufferAllocateInfo{
             s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
@@ -193,6 +208,7 @@ impl CommandBuffer {
             level,
             buf: command_buffer,
             dependencies: Vec::new(),
+            name: String::from(name),
         })
     }
 
@@ -327,7 +343,8 @@ impl CommandBuffer {
             panic!("Tried to manually submit a secondary command buffer!");
         }
 
-        let fence = Rc::new(Fence::new_internal(&self.device, false)?);
+        let fence_name = "temporary-submit-and-wait-fence";
+        let fence = Rc::new(Fence::new_internal(&self.device, fence_name, false)?);
 
         self.submit_synced(
             &[],
@@ -362,6 +379,7 @@ impl CommandBuffer {
             device,
             vk::CommandBufferLevel::PRIMARY,
             pool,
+            "temporary-oneshot-command-buffer",
         )?;
         cmd_buf.record(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT, cmd_fn)?;
         cmd_buf.submit_and_wait()?;
@@ -375,6 +393,12 @@ impl Drop for CommandBuffer {
         unsafe {
             self.device.device.free_command_buffers(self.pool.command_pool, &buffers);
         }
+    }
+}
+
+impl super::NamedResource for CommandBuffer {
+    fn name(&self) -> &str {
+        &self.name
     }
 }
 

@@ -10,10 +10,11 @@ use super::errors::{Error, Result};
 pub struct Semaphore {
     device: Rc<InnerDevice>,
     pub (crate) semaphore: vk::Semaphore,
+    name: String,
 }
 
 impl Semaphore {
-    pub fn new(device: &Device) -> Result<Self> {
+    pub fn new(device: &Device, name: &str) -> Result<Self> {
         let semaphore_create_info = vk::SemaphoreCreateInfo{
             s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
             p_next: ptr::null(),
@@ -28,6 +29,7 @@ impl Semaphore {
                     "Failed to create semaphore",
                 )?
             },
+            name: String::from(name),
         })
     }
 }
@@ -40,17 +42,24 @@ impl Drop for Semaphore {
     }
 }
 
+impl super::NamedResource for Semaphore {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 pub struct Fence {
     device: Rc<InnerDevice>,
     pub (crate) fence: vk::Fence,
+    name: String,
 }
 
 impl Fence {
-    pub fn new(device: &Device, signaled: bool) -> Result<Self> {
-        Self::new_internal(&device.inner, signaled)
+    pub fn new(device: &Device, name: &str, signaled: bool) -> Result<Self> {
+        Self::new_internal(&device.inner, name, signaled)
     }
 
-    pub (crate) fn new_internal(device: &Rc<InnerDevice>, signaled: bool) -> Result<Self> {
+    pub (crate) fn new_internal(device: &Rc<InnerDevice>, name: &str, signaled: bool) -> Result<Self> {
         let fence_create_info = vk::FenceCreateInfo{
             s_type: vk::StructureType::FENCE_CREATE_INFO,
             p_next: ptr::null(),
@@ -69,6 +78,7 @@ impl Fence {
                     "Failed to create command buffer fence",
                 )?
             },
+            name: String::from(name),
         })
     }
 
@@ -104,5 +114,11 @@ impl Drop for Fence {
         unsafe {
             self.device.device.destroy_fence(self.fence, None);
         }
+    }
+}
+
+impl super::NamedResource for Fence {
+    fn name(&self) -> &str {
+        &self.name
     }
 }
