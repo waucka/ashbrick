@@ -156,7 +156,7 @@ impl Presenter {
         Ok(())
     }
 
-    pub fn acquire_frame(&mut self, render_finished_fence: Rc<Fence>) -> Result<Frame>
+    pub fn acquire_frame(&mut self) -> Result<Frame>
     {
         let image_available_semaphore = Rc::clone(self.image_available_semaphores.get(self.current_frame));
         let render_finished_semaphore = Rc::clone(self.render_finished_semaphores.get(self.current_frame));
@@ -181,13 +181,11 @@ impl Presenter {
         let frame_id = self.current_frame;
         self.current_frame.advance();
         Ok(Frame{
-            submission_set: CommandBufferSubmissionSet::new(
-                render_finished_fence,
-                image_available_semaphore,
-                render_finished_semaphore,
-            ),
+            submission_set: None,
             swapchain_image,
             frame_id,
+            image_available_semaphore,
+            render_finished_semaphore,
             wait_for_next_frame: false,
         })
     }
@@ -202,6 +200,8 @@ impl Presenter {
             submission_set,
             swapchain_image,
             frame_id,
+            image_available_semaphore: _,
+            render_finished_semaphore,
             wait_for_next_frame,
         } = frame;
         if self.submissions[swapchain_image.idx as usize].is_some() {
@@ -211,36 +211,37 @@ impl Presenter {
             }
             self.submissions[swapchain_image.idx as usize] = None;
         }
-        let render_finished_semaphore = Rc::clone(self.render_finished_semaphores.get(frame_id));
         let presentation_wait_semaphores = [render_finished_semaphore.semaphore];
 
         let mut results = Vec::new();
-        for submission in &submission_set.submissions {
-            let CommandBufferSubmission{
-                command_buffer,
-                wait,
-                signal,
-                fence,
-            } = submission;
-            let mut wait_list = Vec::new();
-            for wait_spec in wait {
-                wait_list.push((wait_spec.wait_stage, Rc::clone(&wait_spec.semaphore)));
+        if let Some(submission_set) = &submission_set {
+            for submission in &submission_set.submissions {
+                let CommandBufferSubmission{
+                    command_buffer,
+                    wait,
+                    signal,
+                    fence,
+                } = submission;
+                let mut wait_list = Vec::new();
+                for wait_spec in wait {
+                    wait_list.push((wait_spec.wait_stage, Rc::clone(&wait_spec.semaphore)));
+                }
+                let mut signal_list = Vec::new();
+                for signal_spec in signal {
+                    signal_list.push(Rc::clone(signal_spec));
+                }
+                let fence = match fence {
+                    Some(f) => Some(Rc::clone(f)),
+                    None => None,
+                };
+                results.push(command_buffer.submit_synced(
+                    &wait_list,
+                    &signal_list,
+                    fence,
+                ));
             }
-            let mut signal_list = Vec::new();
-            for signal_spec in signal {
-                signal_list.push(Rc::clone(signal_spec));
-            }
-            let fence = match fence {
-                Some(f) => Some(Rc::clone(f)),
-                None => None,
-            };
-            results.push(command_buffer.submit_synced(
-                &wait_list,
-                &signal_list,
-                fence,
-            ));
         }
-        self.submissions[swapchain_image.idx as usize] = Some(submission_set);
+        self.submissions[swapchain_image.idx as usize] = submission_set;
 
         //println!("Presenting a frame...");
         //let start = std::time::Instant::now();
@@ -345,47 +346,32 @@ impl CommandBufferSubmission {
 pub struct CommandBufferSubmissionSet {
     submissions: Vec<CommandBufferSubmission>,
     render_finished_fence: Rc<Fence>,
-    image_available_semaphore: Rc<Semaphore>,
-    render_finished_semaphore: Rc<Semaphore>,
 }
 
 impl CommandBufferSubmissionSet {
-    fn new(
+    pub fn new(
+        submissions: Vec<CommandBufferSubmission>,
         render_finished_fence: Rc<Fence>,
-        image_available_semaphore: Rc<Semaphore>,
-        render_finished_semaphore: Rc<Semaphore>,
     ) -> Self {
         Self{
-            submissions: Vec::new(),
+            submissions,
             render_finished_fence,
-            image_available_semaphore,
-            render_finished_semaphore,
         }
-    }
-
-    pub fn add_submission(&mut self, submission: CommandBufferSubmission) {
-        self.submissions.push(submission);
-    }
-
-    pub fn get_image_available_semaphore(&self) -> Rc<Semaphore> {
-        Rc::clone(&self.image_available_semaphore)
-    }
-
-    pub fn get_render_finished_semaphore(&self) -> Rc<Semaphore> {
-        Rc::clone(&self.render_finished_semaphore)
     }
 }
 
 pub struct Frame {
-    submission_set: CommandBufferSubmissionSet,
+    submission_set: Option<CommandBufferSubmissionSet>,
     swapchain_image: SwapchainImageRef,
     frame_id: FrameId,
+    image_available_semaphore: Rc<Semaphore>,
+    render_finished_semaphore: Rc<Semaphore>,
     wait_for_next_frame: bool,
 }
 
 impl Frame {
-    pub fn get_submission_set(&mut self) -> &mut CommandBufferSubmissionSet {
-        &mut self.submission_set
+    pub fn set_submission_set(&mut self, submission_set: CommandBufferSubmissionSet) {
+        self.submission_set = Some(submission_set);
     }
 
     pub fn get_swapchain_image(&self) -> SwapchainImageRef {
@@ -394,6 +380,14 @@ impl Frame {
 
     pub fn get_frame_id(&self) -> FrameId {
         self.frame_id
+    }
+
+    pub fn get_image_available_semaphore(&self) -> Rc<Semaphore> {
+        Rc::clone(&self.image_available_semaphore)
+    }
+
+    pub fn get_render_finished_semaphore(&self) -> Rc<Semaphore> {
+        Rc::clone(&self.render_finished_semaphore)
     }
 
     pub fn enable_wait_for_next_frame(&mut self) {
