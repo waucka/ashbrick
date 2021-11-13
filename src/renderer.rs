@@ -189,9 +189,7 @@ impl Presenter {
         Ok(())
     }
 
-    pub fn render<F>(&mut self, get_render_data: &mut F) -> Result<()>
-    where
-        F: FnMut(FrameId, SwapchainImageRef) -> Result<RenderData>
+    pub fn acquire_frame(&mut self) -> Result<Frame>
     {
         let image_available_semaphore = Rc::clone(self.image_available_semaphores.get(self.current_frame));
         let render_finished_semaphore = Rc::clone(self.render_finished_semaphores.get(self.current_frame));
@@ -213,27 +211,55 @@ impl Presenter {
                 Err(e) => Err(Error::wrap(e, "Failed to acquire swap chain image")),
             }
         }?;
-        let current_swapchain_sync = swapchain_image.idx as usize;
-        let presentation_wait_semaphores = [render_finished_semaphore.semaphore];
-        let inflight_fence = &mut self.inflight_fences[current_swapchain_sync];
-        let render_data = get_render_data(self.current_frame, swapchain_image)?;
+        let frame_id = self.current_frame;
+        self.current_frame.advance();
+        Ok(Frame{
+            command_buffer: None,
+            wait_stage: vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            wait_for_next_frame: false,
+            swapchain_image,
+            image_available_semaphore,
+            render_finished_semaphore,
+            frame_id,
+        })
+    }
+
+    pub fn present(&mut self, frame: Frame) -> Result<()> {
+        let Frame{
+            command_buffer,
+            wait_stage,
+            wait_for_next_frame,
+            swapchain_image,
+            image_available_semaphore,
+            render_finished_semaphore,
+            frame_id: _,
+        } = frame;
+        let inflight_fence = &mut self.inflight_fences[swapchain_image.idx as usize];
         inflight_fence.wait(u64::MAX)?;
         inflight_fence.reset()?;
         inflight_fence.mark_used();
-        let submit_res = render_data.command_buffer.submit_synced(
-            &[(render_data.wait_stage, image_available_semaphore)],
-            &[render_finished_semaphore],
-            Some(Rc::clone(&inflight_fence.fence)),
-        );
-        match submit_res {
-            Ok(_) => (),
-            Err(e) => {
-                // Mark the fence as unused, since the queue submission won't be signalling the fence.
-                // Since the fence won't get signalled, the next wait() call will wait forever if
-                // we don't do this.
-                inflight_fence.mark_unused();
-                return Err(e);
-            },
+        let presentation_wait_semaphores = [render_finished_semaphore.semaphore];
+
+        if let Some(command_buffer) = command_buffer {
+            let submit_res = command_buffer.submit_synced(
+                &[(wait_stage, image_available_semaphore)],
+                &[render_finished_semaphore],
+                Some(Rc::clone(&inflight_fence.fence)),
+            );
+            match submit_res {
+                Ok(_) => (),
+                Err(e) => {
+                    // Mark the fence as unused, since the queue submission won't be signalling the fence.
+                    // Since the fence won't get signalled, the next wait() call will wait forever if
+                    // we don't do this.
+                    inflight_fence.mark_unused();
+                    return Err(e);
+                },
+            }
+        } else {
+            // If the user didn't provide a command buffer for some reason,
+            // that will also cause fence problems.  Mark it as unused.
+            inflight_fence.mark_unused();
         }
         //println!("Presenting a frame...");
         //let start = std::time::Instant::now();
@@ -249,7 +275,7 @@ impl Presenter {
             p_results: ptr::null_mut(),
         };
 
-        if render_data.wait_for_next_frame {
+        if wait_for_next_frame {
             self.wait_for_next_frame();
         }
 
@@ -263,15 +289,40 @@ impl Presenter {
         self.last_frame_duration = self.last_frame.elapsed();
         self.last_frame = Instant::now();
         //println!("Presented frame in {}ns", start.elapsed().as_nanos());
-        self.current_frame.advance();
         Ok(())
     }
 }
 
-pub struct RenderData {
-    pub command_buffer: Rc<CommandBuffer>,
-    pub wait_stage: vk::PipelineStageFlags,
-    pub wait_for_next_frame: bool,
+pub struct Frame {
+    command_buffer: Option<Rc<CommandBuffer>>,
+    wait_stage: vk::PipelineStageFlags,
+    wait_for_next_frame: bool,
+    swapchain_image: SwapchainImageRef,
+    image_available_semaphore: Rc<Semaphore>,
+    render_finished_semaphore: Rc<Semaphore>,
+    frame_id: FrameId,
+}
+
+impl Frame {
+    pub fn set_command_buffer(&mut self, command_buffer: Rc<CommandBuffer>) {
+        self.command_buffer = Some(command_buffer);
+    }
+
+    pub fn set_wait_stage(&mut self, wait_stage: vk::PipelineStageFlags) {
+        self.wait_stage = wait_stage;
+    }
+
+    pub fn set_wait_for_next_frame(&mut self, wait_for_next_frame: bool) {
+        self.wait_for_next_frame = wait_for_next_frame;
+    }
+
+    pub fn get_frame_id(&self) -> FrameId {
+        self.frame_id
+    }
+
+    pub fn get_swapchain_image(&self) -> SwapchainImageRef {
+        self.swapchain_image
+    }
 }
 
 struct FrameData {
