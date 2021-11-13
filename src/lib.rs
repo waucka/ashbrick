@@ -990,27 +990,31 @@ fn create_logical_device(
         physical_device_features.shader_int64 = vk::TRUE;
     }
 
-    let mut imageless_framebuffer_features = vk::PhysicalDeviceImagelessFramebufferFeatures{
-        s_type: vk::StructureType::PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES,
+    let mut device_address_features = vk::PhysicalDeviceBufferAddressFeaturesEXT{
+        s_type: vk::StructureType::PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT,
         p_next: ptr::null_mut(),
+        buffer_device_address: vk::TRUE,
         ..Default::default()
     };
-    imageless_framebuffer_features.imageless_framebuffer = vk::TRUE;
 
-    let descriptor_indexing_features = {
-        let mut descriptor_indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures{
-            s_type: vk::StructureType::PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
-            p_next: (&mut imageless_framebuffer_features as *mut _) as *mut c_void,
-            ..Default::default()
-        };
-        descriptor_indexing_features.runtime_descriptor_array = vk::TRUE;
-        //descriptor_indexing_features.shader_uniform_buffer_array_non_uniform_indexing = vk::TRUE;
-        descriptor_indexing_features.shader_sampled_image_array_non_uniform_indexing = vk::TRUE;
-        descriptor_indexing_features.shader_storage_buffer_array_non_uniform_indexing = vk::TRUE;
-        descriptor_indexing_features.shader_storage_image_array_non_uniform_indexing = vk::TRUE;
-        descriptor_indexing_features.descriptor_binding_partially_bound = vk::TRUE;
-        descriptor_indexing_features
+    let mut imageless_framebuffer_features = vk::PhysicalDeviceImagelessFramebufferFeatures{
+        s_type: vk::StructureType::PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES,
+        p_next: (&mut device_address_features as *mut _) as *mut c_void,
+        imageless_framebuffer: vk::TRUE,
+        ..Default::default()
     };
+
+    let descriptor_indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures{
+        s_type: vk::StructureType::PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+        p_next: (&mut imageless_framebuffer_features as *mut _) as *mut c_void,
+        runtime_descriptor_array: vk::TRUE,
+        shader_sampled_image_array_non_uniform_indexing: vk::TRUE,
+        shader_storage_buffer_array_non_uniform_indexing: vk::TRUE,
+        shader_storage_image_array_non_uniform_indexing: vk::TRUE,
+        descriptor_binding_partially_bound: vk::TRUE,
+        ..Default::default()
+    };
+    //descriptor_indexing_features.shader_uniform_buffer_array_non_uniform_indexing = vk::TRUE;
 
     //physical_device_features.shader_uniform_buffer_array_dynamic_indexing = vk::TRUE;
     physical_device_features.shader_sampled_image_array_dynamic_indexing = vk::TRUE;
