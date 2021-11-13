@@ -8,7 +8,7 @@ use std::ptr;
 use std::os::raw::c_void;
 use std::pin::Pin;
 
-use super::{Device, InnerDevice, Queue, FrameId, PerFrameSet};
+use super::{Device, InnerDevice, Queue, FrameId, PerFrameSet, NamedResource};
 use super::image::{Image, ImageView, ImageBuilder};
 use super::texture::Texture;
 use super::sync::{Semaphore, Fence};
@@ -212,8 +212,11 @@ impl Presenter {
             render_finished_semaphore,
             wait_for_next_frame,
         } = frame;
+
+        // Wait for swapchain image to become available
         if self.submissions[swapchain_image.idx as usize].is_some() {
             if let Some(submission) = &mut self.submissions[swapchain_image.idx as usize] {
+                println!("Waiting for fence {}", submission.render_finished_fence.name());
                 submission.render_finished_fence.wait(u64::MAX)?;
                 submission.render_finished_fence.reset()?;
             }
@@ -223,6 +226,9 @@ impl Presenter {
 
         let mut results = Vec::new();
         if let Some(submission_set) = &submission_set {
+            // Wait for whatever the user wants us to wait for (probably command buffers)
+            println!("Waiting for fence {}", submission_set.wait_fence.name());
+            submission_set.wait_fence.wait(u64::MAX)?;
             for submission in &submission_set.submissions {
                 let CommandBufferSubmission{
                     command_buffer,
@@ -239,8 +245,14 @@ impl Presenter {
                     signal_list.push(Rc::clone(signal_spec));
                 }
                 let fence = match fence {
-                    Some(f) => Some(Rc::clone(f)),
-                    None => None,
+                    Some(f) => {
+                        println!("Submitting with fence {}", f.name());
+                        Some(Rc::clone(f))
+                    },
+                    None => {
+                        println!("Submitting without a fence");
+                        None
+                    },
                 };
                 results.push(command_buffer.submit_synced(
                     &wait_list,
@@ -365,16 +377,19 @@ impl CommandBufferSubmission {
 pub struct CommandBufferSubmissionSet {
     submissions: Vec<CommandBufferSubmission>,
     render_finished_fence: Rc<Fence>,
+    wait_fence: Rc<Fence>,
 }
 
 impl CommandBufferSubmissionSet {
     pub fn new(
         submissions: Vec<CommandBufferSubmission>,
         render_finished_fence: Rc<Fence>,
+        wait_fence: Rc<Fence>,
     ) -> Self {
         Self{
             submissions,
             render_finished_fence,
+            wait_fence,
         }
     }
 }
