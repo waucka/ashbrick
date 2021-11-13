@@ -104,6 +104,9 @@ pub struct MemoryMappingWriter {
 impl std::io::Write for MemoryMappingWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.offset >= self.limit {
+            if buf.len() == 0 {
+                return Ok(0);
+            }
             return Err(
                 std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
@@ -469,9 +472,8 @@ impl<T: WriteStd140> ComplexUniformBuffer<T>
     pub fn new(
         device: &Device,
         name: &str,
-        initial_value: &T,
+        size: usize,
     ) -> Result<Self> {
-        let size = initial_value.std140_size();
         let buffer = Rc::new(Buffer::new(
             Rc::clone(&device.inner),
             name,
@@ -487,8 +489,6 @@ impl<T: WriteStd140> ComplexUniformBuffer<T>
             size,
             _phantom: std::marker::PhantomData,
         };
-
-        this.update(initial_value)?;
 
         Ok(this)
     }
