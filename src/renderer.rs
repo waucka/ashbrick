@@ -212,23 +212,18 @@ impl Presenter {
             render_finished_semaphore,
             wait_for_next_frame,
         } = frame;
-
-        // Wait for swapchain image to become available
-        if self.submissions[swapchain_image.idx as usize].is_some() {
-            if let Some(submission) = &mut self.submissions[swapchain_image.idx as usize] {
-                println!("Waiting for fence {}", submission.render_finished_fence.name());
-                submission.render_finished_fence.wait(u64::MAX)?;
-                submission.render_finished_fence.reset()?;
-            }
-            self.submissions[swapchain_image.idx as usize] = None;
-        }
         let presentation_wait_semaphores = [render_finished_semaphore.semaphore];
 
         let mut results = Vec::new();
         if let Some(submission_set) = &submission_set {
             // Wait for whatever the user wants us to wait for (probably command buffers)
-            println!("Waiting for fence {}", submission_set.wait_fence.name());
-            submission_set.wait_fence.wait(u64::MAX)?;
+            println!("Waiting for fence {}", submission_set.render_finished_fence.name());
+            submission_set.render_finished_fence.wait(u64::MAX)?;
+            submission_set.render_finished_fence.reset()?;
+
+            // Release old resources for this swapchain image
+            self.submissions[swapchain_image.idx as usize] = None;
+
             for submission in &submission_set.submissions {
                 let CommandBufferSubmission{
                     command_buffer,
@@ -402,19 +397,16 @@ impl CommandBufferSubmission {
 pub struct CommandBufferSubmissionSet {
     submissions: Vec<CommandBufferSubmission>,
     render_finished_fence: Rc<Fence>,
-    wait_fence: Rc<Fence>,
 }
 
 impl CommandBufferSubmissionSet {
     pub fn new(
         submissions: Vec<CommandBufferSubmission>,
         render_finished_fence: Rc<Fence>,
-        wait_fence: Rc<Fence>,
     ) -> Self {
         Self{
             submissions,
             render_finished_fence,
-            wait_fence,
         }
     }
 }
