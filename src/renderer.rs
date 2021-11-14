@@ -8,7 +8,7 @@ use std::ptr;
 use std::os::raw::c_void;
 use std::pin::Pin;
 
-use super::{Device, InnerDevice, Queue, FrameId, PerFrameSet, NamedResource};
+use super::{Device, InnerDevice, Queue, FrameId, PerFrameSet};
 use super::image::{Image, ImageView, ImageBuilder};
 use super::texture::Texture;
 use super::sync::{Semaphore, Fence};
@@ -217,7 +217,6 @@ impl Presenter {
         let mut results = Vec::new();
         if let Some(submission_set) = &submission_set {
             // Wait for whatever the user wants us to wait for (probably command buffers)
-            println!("Waiting for fence {}", submission_set.render_finished_fence.name());
             submission_set.render_finished_fence.wait(u64::MAX)?;
             submission_set.render_finished_fence.reset()?;
 
@@ -240,14 +239,8 @@ impl Presenter {
                     signal_list.push(Rc::clone(signal_spec));
                 }
                 let fence = match fence {
-                    Some(f) => {
-                        println!("Submitting with fence {}", f.name());
-                        Some(Rc::clone(f))
-                    },
-                    None => {
-                        println!("Submitting without a fence");
-                        None
-                    },
+                    Some(f) => Some(Rc::clone(f)),
+                    None => None,
                 };
                 results.push(command_buffer.submit_synced(
                     &wait_list,
