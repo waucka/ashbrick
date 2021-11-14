@@ -9,7 +9,7 @@ use std::os::raw::c_void;
 
 use super::{Device, InnerDevice, Queue, FrameId};
 use super::descriptor::DescriptorSet;
-use super::renderer::{Presenter, SwapchainImageRef, RenderPass, Pipeline, SubpassRef, RenderPassData};
+use super::renderer::{Presenter, SwapchainImageRef, RenderPass, GraphicsPipeline, SubpassRef, RenderPassData};
 use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer, Buffer};
 use super::image::Image;
 use super::shader::Vertex;
@@ -668,7 +668,7 @@ impl BufferWriter {
 
     pub fn bind_pipeline<V: Vertex + 'static>(
         &mut self,
-        pipeline: Rc<Pipeline<V>>,
+        pipeline: Rc<GraphicsPipeline<V>>,
     ) {
         unsafe {
             self.device.device.cmd_bind_pipeline(

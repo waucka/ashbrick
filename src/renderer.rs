@@ -551,7 +551,7 @@ impl Drop for Swapchain {
     }
 }
 
-pub struct PipelineParameters {
+pub struct GraphicsPipelineParameters {
     msaa_samples: vk::SampleCountFlags,
     cull_mode: vk::CullModeFlags,
     front_face: vk::FrontFace,
@@ -563,7 +563,7 @@ pub struct PipelineParameters {
     subpass: SubpassRef,
 }
 
-impl PipelineParameters {
+impl GraphicsPipelineParameters {
     pub fn new(subpass: SubpassRef) -> Self {
         Self{
             msaa_samples: vk::SampleCountFlags::TYPE_1,
@@ -619,7 +619,7 @@ impl PipelineParameters {
     }
 }
 
-pub struct Pipeline<V>
+pub struct GraphicsPipeline<V>
 where
     V: Vertex,
 {
@@ -628,10 +628,10 @@ where
     pub (crate) pipeline: RefCell<vk::Pipeline>,
     vert_shader: VertexShader<V>,
     frag_shader: FragmentShader,
-    params: PipelineParameters,
+    params: GraphicsPipelineParameters,
 }
 
-impl<V> Pipeline<V>
+impl<V> GraphicsPipeline<V>
 where
     V: Vertex,
 {
@@ -643,7 +643,7 @@ where
         vert_shader: VertexShader<V>,
         frag_shader: FragmentShader,
         set_layouts: &[&DescriptorSetLayout],
-        params: PipelineParameters,
+        params: GraphicsPipelineParameters,
     ) -> Result<Self> {
         let mut vk_set_layouts = vec![];
         for layout in set_layouts.iter() {
@@ -712,7 +712,7 @@ where
         vert_shader: VertexShader<V>,
         frag_shader: FragmentShader,
         set_layouts: &[&DescriptorSetLayout],
-        params: PipelineParameters,
+        params: GraphicsPipelineParameters,
     ) -> Result<Self> {
         Self::from_inner(
             device.inner.clone(),
@@ -734,7 +734,7 @@ where
         pipeline_layout: vk::PipelineLayout,
         vert_shader_module: vk::ShaderModule,
         frag_shader_module: vk::ShaderModule,
-        params: &PipelineParameters,
+        params: &GraphicsPipelineParameters,
     ) -> Result<vk::Pipeline> {
         let main_function_name = CString::new("main").unwrap();
 
@@ -958,7 +958,7 @@ where
     }
 }
 
-impl<V> Drop for Pipeline<V>
+impl<V> Drop for GraphicsPipeline<V>
 where
     V: Vertex,
 {
