@@ -1,12 +1,13 @@
 use ash::vk;
 use ash::vk::Handle;
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::ptr;
 use std::os::raw::c_void;
 
-use super::{Device, InnerDevice, Queue, FrameId, GraphicsResource};
+use super::{Device, InnerDevice, Queue, FrameId};
 use super::descriptor::DescriptorSet;
 use super::renderer::{Presenter, SwapchainImageRef, RenderPass, Pipeline, SubpassRef, RenderPassData};
 use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer, Buffer};
@@ -20,8 +21,6 @@ pub struct SecondaryCommandBuffer {
     buf: RefCell<CommandBuffer>,
     name: String,
 }
-
-impl super::GraphicsResource for SecondaryCommandBuffer {}
 
 impl SecondaryCommandBuffer {
     pub fn new(
@@ -174,7 +173,7 @@ pub struct CommandBuffer {
     buf: vk::CommandBuffer,
     // This vector stores references to things that shouldn't be destroyed until
     // the command buffer has been destroyed.
-    dependencies: Vec<Rc<dyn GraphicsResource>>,
+    dependencies: Vec<Rc<dyn Any>>,
     name: String,
 }
 
@@ -419,7 +418,7 @@ pub struct BufferWriter {
     device: Rc<InnerDevice>,
     command_buffer: vk::CommandBuffer,
     in_render_pass: bool,
-    dependencies: Vec<Rc<dyn GraphicsResource>>,
+    dependencies: Vec<Rc<dyn Any>>,
 }
 
 impl BufferWriter {
@@ -723,7 +722,7 @@ pub struct RenderPassWriter {
     command_buffer: vk::CommandBuffer,
     auto_end: bool,
     allow_subpass_increment: bool,
-    dependencies: Vec<Rc<dyn GraphicsResource>>,
+    dependencies: Vec<Rc<dyn Any>>,
 }
 
 impl RenderPassWriter {

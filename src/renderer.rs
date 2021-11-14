@@ -631,8 +631,6 @@ where
     params: PipelineParameters,
 }
 
-impl<V: Vertex> super::GraphicsResource for Pipeline<V> {}
-
 impl<V> Pipeline<V>
 where
     V: Vertex,

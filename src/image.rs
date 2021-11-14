@@ -429,8 +429,6 @@ impl Drop for Image {
     }
 }
 
-impl super::GraphicsResource for Image {}
-
 pub struct ImageView {
     device: Rc<InnerDevice>,
     pub (crate) view: vk::ImageView,

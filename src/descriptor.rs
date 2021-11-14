@@ -625,8 +625,6 @@ impl DescriptorSet {
     }
 }
 
-impl super::GraphicsResource for DescriptorSet {}
-
 impl std::fmt::Debug for DescriptorSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DescriptorSet")

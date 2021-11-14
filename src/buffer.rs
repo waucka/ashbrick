@@ -143,8 +143,6 @@ pub struct Buffer {
     size: vk::DeviceSize,
 }
 
-impl super::GraphicsResource for Buffer {}
-
 impl Buffer {
     fn new(
         device: Rc<InnerDevice>,
@@ -277,15 +275,11 @@ impl Drop for UploadSourceBuffer {
     }
 }
 
-impl super::GraphicsResource for UploadSourceBuffer {}
-
 pub struct VertexBuffer<T> {
     buf: Rc<Buffer>,
     len: usize,
     _phantom: std::marker::PhantomData<T>,
 }
-
-impl<T> super::GraphicsResource for VertexBuffer<T> {}
 
 impl<T> VertexBuffer<T> {
     pub fn new(
@@ -341,8 +335,6 @@ pub struct IndexBuffer {
     buf: Rc<Buffer>,
     len: usize,
 }
-
-impl super::GraphicsResource for IndexBuffer {}
 
 impl IndexBuffer {
     pub fn new(

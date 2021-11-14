@@ -1151,8 +1151,6 @@ fn get_queues_from_device(
     Ok(queues)
 }
 
-pub trait GraphicsResource {}
-
 pub trait NamedResource {
     fn name(&self) -> &str;
 }
