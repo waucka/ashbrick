@@ -47,6 +47,7 @@ macro_rules! impl_defaulted_setter {
 
 pub mod buffer;
 pub mod command_buffer;
+pub mod compute;
 pub mod image;
 pub mod renderer;
 pub mod shader;

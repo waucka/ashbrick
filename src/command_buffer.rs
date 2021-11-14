@@ -8,6 +8,7 @@ use std::ptr;
 use std::os::raw::c_void;
 
 use super::{Device, InnerDevice, Queue, FrameId};
+use super::compute::ComputePipeline;
 use super::descriptor::DescriptorSet;
 use super::renderer::{Presenter, SwapchainImageRef, RenderPass, GraphicsPipeline, SubpassRef, RenderPassData};
 use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer, Buffer};
@@ -666,7 +667,7 @@ impl BufferWriter {
         );
     }
 
-    pub fn bind_pipeline<V: Vertex + 'static>(
+    pub fn bind_graphics_pipeline<V: Vertex + 'static>(
         &mut self,
         pipeline: Rc<GraphicsPipeline<V>>,
     ) {
@@ -680,7 +681,7 @@ impl BufferWriter {
         self.dependencies.push(pipeline);
     }
 
-    pub fn bind_descriptor_sets(
+    pub fn bind_graphics_descriptor_sets(
         &mut self,
         pipeline_layout: vk::PipelineLayout,
         descriptor_sets: &[Rc<DescriptorSet>],
@@ -702,6 +703,62 @@ impl BufferWriter {
                 first_set,
                 &vk_sets,
                 &[],
+            );
+        }
+    }
+
+    pub fn bind_compute_pipeline(
+        &mut self,
+        pipeline: Rc<ComputePipeline>,
+    ) {
+        unsafe {
+            self.device.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::COMPUTE,
+                pipeline.get_vk(),
+            );
+        }
+        self.dependencies.push(pipeline);
+    }
+
+    pub fn bind_compute_descriptor_sets(
+        &mut self,
+        pipeline_layout: vk::PipelineLayout,
+        descriptor_sets: &[Rc<DescriptorSet>],
+        first_set: u32,
+    ) {
+        let mut vk_sets = Vec::new();
+        for set in descriptor_sets {
+            vk_sets.push(set.inner);
+            // This turbofish horseshit is needed because otherwise, the compiler will
+            // infer the type parameter to be `dyn Drop`, and Rc::clone() will barf because
+            // its parameter is Rc<DescriptorSet> rather than Rc<dyn Drop>.
+            self.dependencies.push(Rc::<DescriptorSet>::clone(set));
+        }
+        unsafe {
+            self.device.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::COMPUTE,
+                pipeline_layout,
+                first_set,
+                &vk_sets,
+                &[],
+            );
+        }
+    }
+
+    pub fn dispatch(
+        &self,
+        group_count_x: u32,
+        group_count_y: u32,
+        group_count_z: u32,
+    ) {
+        unsafe {
+            self.device.device.cmd_dispatch(
+                self.command_buffer,
+                group_count_x,
+                group_count_y,
+                group_count_z,
             );
         }
     }

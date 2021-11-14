@@ -117,3 +117,27 @@ impl GenericShader for FragmentShader {
         &self.shader
     }
 }
+
+pub struct ComputeShader {
+    shader: Shader,
+}
+
+impl ComputeShader {
+    pub fn from_spv_file(device: &Device, spv_file: &Path) -> Result<Self> {
+        Ok(Self{
+            shader: Shader::from_spv_file(device.inner.clone(), spv_file)?,
+        })
+    }
+
+    pub fn from_spv_bytes(device: &Device, spv_bytes: Vec<u8>) -> Result<Self> {
+        Ok(Self {
+            shader: Shader::from_spv_bytes(device.inner.clone(), spv_bytes)?
+        })
+    }
+}
+
+impl GenericShader for ComputeShader {
+    fn get_shader(&self) -> &Shader {
+        &self.shader
+    }
+}
