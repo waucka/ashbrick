@@ -12,6 +12,7 @@ use super::command_buffer::{CommandBuffer, CommandPool};
 
 pub trait HasBuffer {
     fn get_buffer(&self) -> vk::Buffer;
+    fn get_size(&self) -> vk::DeviceSize;
 }
 
 // With gpu-allocator instead of vk-mem, I don't think this type
@@ -220,6 +221,10 @@ impl HasBuffer for Buffer {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf
     }
+
+    fn get_size(&self) -> vk::DeviceSize {
+        self.size
+    }
 }
 
 
@@ -266,12 +271,9 @@ impl HasBuffer for UploadSourceBuffer {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
     }
-}
 
-impl Drop for UploadSourceBuffer {
-    fn drop(&mut self) {
-        // Drop has been implemented solely so that UploadSourceBuffers can be recorded as
-        // dependencies for CommandBuffers.
+    fn get_size(&self) -> vk::DeviceSize {
+        self.buf.size
     }
 }
 
@@ -322,12 +324,9 @@ impl<V> HasBuffer for VertexBuffer<V> {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
     }
-}
 
-impl<V> Drop for VertexBuffer<V> {
-    fn drop(&mut self) {
-        // Drop has been implemented solely so that VertexBuffers can be recorded as
-        // dependencies for CommandBuffers.
+    fn get_size(&self) -> vk::DeviceSize {
+        self.buf.size
     }
 }
 
@@ -376,12 +375,9 @@ impl HasBuffer for IndexBuffer {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
     }
-}
 
-impl Drop for IndexBuffer {
-    fn drop(&mut self) {
-        // Drop has been implemented solely so that IndexBuffers can be recorded as
-        // dependencies for CommandBuffers.
+    fn get_size(&self) -> vk::DeviceSize {
+        self.buf.size
     }
 }
 
@@ -449,6 +445,10 @@ impl<T: AsStd140> HasBuffer for UniformBuffer<T>
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
     }
+
+    fn get_size(&self) -> vk::DeviceSize {
+        self.buf.size
+    }
 }
 
 // ComplexUniformBuffer is for types that can't implement AsStd140
@@ -514,5 +514,55 @@ impl<T: WriteStd140> HasBuffer for ComplexUniformBuffer<T>
 {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
+    }
+
+    fn get_size(&self) -> vk::DeviceSize {
+        self.buf.size
+    }
+}
+
+pub struct StorageBuffer {
+    buf: Rc<Buffer>,
+}
+
+impl StorageBuffer {
+    pub fn new(
+        device: &Device,
+        name: &str,
+        size: vk::DeviceSize,
+    ) -> Result<Self> {
+        // device: Rc<InnerDevice>,
+        // name: &str,
+        // size: vk::DeviceSize,
+        // usage: vk::BufferUsageFlags,
+        // memory_usage: MemoryUsage,
+        // sharing_mode: vk::SharingMode,
+        Ok(Self {
+            buf: Rc::new(Buffer::new(
+                Rc::clone(&device.inner),
+                name,
+                size,
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+                MemoryUsage::GpuOnly,
+                vk::SharingMode::EXCLUSIVE,
+            )?),
+        })
+    }
+
+    pub fn copy_data<T>(&self, data: &[T]) -> Result<()> {
+        self.buf.with_memory_mapping(|mmap| {
+            mmap.copy_slice(data)?;
+            Ok(())
+        })
+    }
+}
+
+impl HasBuffer for StorageBuffer {
+    fn get_buffer(&self) -> vk::Buffer {
+        self.buf.buf
+    }
+
+    fn get_size(&self) -> vk::DeviceSize {
+        self.buf.size
     }
 }
