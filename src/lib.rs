@@ -1156,3 +1156,7 @@ pub trait GraphicsResource {}
 pub trait NamedResource {
     fn name(&self) -> &str;
 }
+
+pub trait HasHandle {
+    fn vk_handle(&self) -> u64;
+}

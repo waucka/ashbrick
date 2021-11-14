@@ -1,4 +1,5 @@
 use ash::vk;
+use ash::vk::Handle;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -91,6 +92,12 @@ impl Drop for SecondaryCommandBuffer {
 impl super::NamedResource for SecondaryCommandBuffer {
     fn name(&self) -> &str {
         &self.name
+    }
+}
+
+impl super::HasHandle for SecondaryCommandBuffer {
+    fn vk_handle(&self) -> u64 {
+        self.buf.borrow().vk_handle()
     }
 }
 
@@ -399,6 +406,12 @@ impl Drop for CommandBuffer {
 impl super::NamedResource for CommandBuffer {
     fn name(&self) -> &str {
         &self.name
+    }
+}
+
+impl super::HasHandle for CommandBuffer {
+    fn vk_handle(&self) -> u64 {
+        self.buf.as_raw()
     }
 }
 
