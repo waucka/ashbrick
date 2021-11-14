@@ -357,13 +357,13 @@ impl Texture {
     fn from_image_internal(device: &Device, name: &str, image_object: &image::DynamicImage, srgb: bool, mipmapped: bool) -> Result<Self> {
         use image::DynamicImage::*;
         let (bytes_per_channel, channels_per_pixel, format) = match &image_object {
-            ImageLuma8(_) => (1, 1, if srgb { vk::Format::R8_SNORM } else { vk::Format::R8_UNORM }),
-            ImageLumaA8(_) => (1, 2, if srgb { vk::Format::R8G8_SNORM } else { vk::Format::R8G8_UNORM }),
-            ImageRgba8(_) => (1, 4, if srgb { vk::Format::R8G8B8A8_SNORM } else { vk::Format::R8G8B8A8_UNORM }),
-            ImageBgra8(_) => (1, 4, if srgb { vk::Format::R8G8B8A8_SNORM } else { vk::Format::R8G8B8A8_UNORM }),
-            ImageLuma16(_) => (2, 1, if srgb { vk::Format::R16_SNORM } else { vk::Format::R16_UNORM }),
-            ImageLumaA16(_) => (2, 2, if srgb { vk::Format::R16G16_SNORM } else { vk::Format::R16G16_UNORM }),
-            ImageRgba16(_) => (2, 4, if srgb { vk::Format::R16G16B16A16_SNORM } else { vk::Format::R16G16B16A16_UNORM }),
+            ImageLuma8(_) => (1, 1, if srgb { vk::Format::R8_SRGB } else { vk::Format::R8_UNORM }),
+            ImageLumaA8(_) => (1, 2, if srgb { vk::Format::R8G8_SRGB } else { vk::Format::R8G8_UNORM }),
+            ImageRgba8(_) => (1, 4, if srgb { vk::Format::R8G8B8A8_SRGB } else { vk::Format::R8G8B8A8_UNORM }),
+            ImageBgra8(_) => (1, 4, if srgb { vk::Format::R8G8B8A8_SRGB } else { vk::Format::R8G8B8A8_UNORM }),
+            ImageLuma16(_) => (2, 1, if srgb { return Err(Error::SrgbNotAvailable) } else { vk::Format::R16_UNORM }),
+            ImageLumaA16(_) => (2, 2, if srgb { return Err(Error::SrgbNotAvailable) } else { vk::Format::R16G16_UNORM }),
+            ImageRgba16(_) => (2, 4, if srgb { return Err(Error::SrgbNotAvailable) } else { vk::Format::R16G16B16A16_UNORM }),
             ImageRgb8(_) | ImageRgb16(_) | ImageBgr8(_) => return Err(Error::internal("Bad image passed to from_image_internal")),
         };
         let (width, height) = (image_object.width(), image_object.height());

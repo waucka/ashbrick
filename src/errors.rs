@@ -35,6 +35,7 @@ pub enum Error {
     InvalidBufferCopy(u64, u64),
     InvalidUniformWrite(usize, usize),
     NeedResize,
+    SrgbNotAvailable,
 }
 
 impl Error {
@@ -128,16 +129,17 @@ impl Display for Error {
                 data_len,
                 required_multiple,
             } => {
-                write!(f, "Float texture is {} bytes long; which is not a multiple of {}.", data_len, required_multiple)
+                write!(f, "Float texture is {} bytes long; which is not a multiple of {}", data_len, required_multiple)
             },
             Io{
                 err,
                 msg,
             } => write!(f, "{}: {}", msg, err),
-            ZeroSizeBuffer => write!(f, "Buffer size must be greater than zero."),
-            InvalidBufferCopy(buf1, buf2) => write!(f, "Tried to copy a {} byte buffer into a {} byte buffer.", buf1, buf2),
-            InvalidUniformWrite(buf1, buf2) => write!(f, "Tried to write {} bytes to a {}-byte uniform buffer.", buf1, buf2),
+            ZeroSizeBuffer => write!(f, "Buffer size must be greater than zero"),
+            InvalidBufferCopy(buf1, buf2) => write!(f, "Tried to copy a {} byte buffer into a {} byte buffer", buf1, buf2),
+            InvalidUniformWrite(buf1, buf2) => write!(f, "Tried to write {} bytes to a {}-byte uniform buffer", buf1, buf2),
             NeedResize => write!(f, "Framebuffer needs resize"),
+            SrgbNotAvailable => write!(f, "Automatic sRGB conversion is not available for 16 bit per channel formats"),
         }
     }
 }
