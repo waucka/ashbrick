@@ -523,6 +523,7 @@ impl<T: WriteStd140> HasBuffer for ComplexUniformBuffer<T>
 
 pub struct StorageBuffer {
     buf: Rc<Buffer>,
+    extra_usage_flags: vk::BufferUsageFlags,
 }
 
 impl StorageBuffer {
@@ -530,23 +531,48 @@ impl StorageBuffer {
         device: &Device,
         name: &str,
         size: vk::DeviceSize,
+        extra_usage_flags: vk::BufferUsageFlags,
     ) -> Result<Self> {
-        // device: Rc<InnerDevice>,
-        // name: &str,
-        // size: vk::DeviceSize,
-        // usage: vk::BufferUsageFlags,
-        // memory_usage: MemoryUsage,
-        // sharing_mode: vk::SharingMode,
         Ok(Self {
             buf: Rc::new(Buffer::new(
                 Rc::clone(&device.inner),
                 name,
                 size,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
+                vk::BufferUsageFlags::STORAGE_BUFFER | extra_usage_flags,
                 MemoryUsage::GpuOnly,
                 vk::SharingMode::EXCLUSIVE,
             )?),
+            extra_usage_flags,
         })
+    }
+
+    pub fn as_vertex_buffer<T>(
+        &self,
+        num_vertices: usize,
+    ) -> Option<VertexBuffer<T>> {
+        if self.extra_usage_flags.contains(vk::BufferUsageFlags::VERTEX_BUFFER) {
+            Some(VertexBuffer{
+                buf: Rc::clone(&self.buf),
+                len: num_vertices,
+                _phantom: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn as_index_buffer(
+        &self,
+        num_indices: usize,
+    ) -> Option<IndexBuffer> {
+        if self.extra_usage_flags.contains(vk::BufferUsageFlags::VERTEX_BUFFER) {
+            Some(IndexBuffer{
+                buf: Rc::clone(&self.buf),
+                len: num_indices,
+            })
+        } else {
+            None
+        }
     }
 
     pub fn copy_data<T>(&self, data: &[T]) -> Result<()> {
