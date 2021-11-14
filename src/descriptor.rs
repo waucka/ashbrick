@@ -9,7 +9,7 @@ use std::ptr;
 use std::rc::Rc;
 
 use super::{Device, InnerDevice};
-use super::buffer::{UniformBuffer, ComplexUniformBuffer, HasBuffer};
+use super::buffer::{UniformBuffer, ComplexUniformBuffer, StorageBuffer, HasBuffer};
 use super::texture::{Texture, Sampler};
 
 use super::errors::{Error, Result};
@@ -164,6 +164,41 @@ impl<T: WriteStd140> DescriptorRef for ComplexUniformBufferRef<T>
 
     fn get_type(&self) -> vk::DescriptorType {
         vk::DescriptorType::UNIFORM_BUFFER
+    }
+}
+
+pub struct StorageBufferRef {
+    storage_buffers: Vec<Rc<StorageBuffer>>,
+}
+
+impl StorageBufferRef {
+    pub fn new(storage_buffers: Vec<Rc<StorageBuffer>>) -> Self {
+        Self{
+            storage_buffers,
+        }
+    }
+}
+
+impl DescriptorRef for StorageBufferRef {
+    fn get_write(&self, dst_set: Rc<DescriptorSet>, dst_binding: u32) -> WriteDescriptorSet {
+        let mut storage_buffer_info = vec![];
+        for buf in self.storage_buffers.iter() {
+            storage_buffer_info.push(vk::DescriptorBufferInfo{
+                buffer: buf.get_buffer(),
+                offset: 0,
+                range: buf.get_size(),
+            });
+        }
+        WriteDescriptorSet::for_buffers(
+            vk::DescriptorType::STORAGE_BUFFER,
+            storage_buffer_info,
+            dst_set,
+            dst_binding,
+        )
+    }
+
+    fn get_type(&self) -> vk::DescriptorType {
+        vk::DescriptorType::STORAGE_BUFFER
     }
 }
 
