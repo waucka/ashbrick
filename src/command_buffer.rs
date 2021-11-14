@@ -542,6 +542,45 @@ impl BufferWriter {
         }
     }
 
+    pub fn transfer_buffer_ownership<T: HasBuffer>(
+        &mut self,
+        buffer: T,
+        src: Rc<Queue>,
+        src_stage_flags: vk::PipelineStageFlags,
+        src_access_mask: vk::AccessFlags,
+        dst: Rc<Queue>,
+        dst_stage_flags: vk::PipelineStageFlags,
+        dst_access_mask: vk::AccessFlags,
+        deps: vk::DependencyFlags,
+    ) {
+        if src.family_idx == dst.family_idx {
+            // No transfer needed!
+            return;
+        }
+        let buf = buffer.get_buffer();
+        let size = buffer.get_size();
+        self.pipeline_barrier(
+            src_stage_flags,
+            dst_stage_flags,
+            deps,
+            // No generic memory barriers needed for this
+            &[],
+            &[vk::BufferMemoryBarrier{
+                s_type: vk::StructureType::BUFFER_MEMORY_BARRIER,
+                p_next: ptr::null(),
+                src_access_mask,
+                dst_access_mask,
+                src_queue_family_index: src.family_idx,
+                dst_queue_family_index: dst.family_idx,
+                buffer: buf,
+                offset: 0,
+                size: size,
+            }],
+            // No image memory barriers needed for this, obviously
+            &[],
+        );
+    }
+
     pub fn copy_buffer(
         &mut self,
         src_buffer: Rc<Buffer>,
