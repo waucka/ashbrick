@@ -432,6 +432,14 @@ impl Device {
         self.inner.get_default_transfer_pool()
     }
 
+    pub fn get_default_compute_queue(&self) -> Rc<Queue> {
+        self.inner.get_default_compute_queue()
+    }
+
+    pub fn get_default_compute_pool(&self) -> Rc<CommandPool> {
+        self.inner.get_default_compute_pool()
+    }
+
     pub fn get_queues(&self) -> Vec<Rc<Queue>> {
         let mut queues = vec![];
         for q in &self.inner.queue_set.borrow().queues {
@@ -562,6 +570,7 @@ struct QueueSet {
     default_graphics_queue_idx: usize,
     default_present_queue_idx: usize,
     default_transfer_queue_idx: usize,
+    default_compute_queue_idx: usize,
 }
 
 struct InnerDevice {
@@ -669,6 +678,7 @@ impl InnerDevice {
                 default_graphics_queue_idx: 0,
                 default_present_queue_idx: 0,
                 default_transfer_queue_idx: 0,
+                default_compute_queue_idx: 0,
             }),
         });
 
@@ -682,6 +692,7 @@ impl InnerDevice {
             let mut maybe_graphics_queue_idx = None;
             let mut maybe_present_queue_idx = None;
             let mut maybe_transfer_queue_idx = None;
+            let mut maybe_compute_queue_idx = None;
             for (idx, queue) in queues.iter().enumerate() {
                 if queue.can_do_graphics() {
                     maybe_graphics_queue_idx = Some(idx)
@@ -692,12 +703,15 @@ impl InnerDevice {
                 if queue.can_do_transfer() {
                     maybe_transfer_queue_idx = Some(idx)
                 }
+                if queue.can_do_compute() {
+                    maybe_compute_queue_idx = Some(idx)
+                }
             }
 
-            let (default_graphics_queue_idx, default_present_queue_idx, default_transfer_queue_idx) =
-                match (maybe_graphics_queue_idx, maybe_present_queue_idx, maybe_transfer_queue_idx) {
-                    (Some(q1), Some(q2), Some(q3)) => (q1, q2, q3),
-                    _ => panic!("Unable to create all three of: graphics queue, present queue, transfer queue!"),
+            let (default_graphics_queue_idx, default_present_queue_idx, default_transfer_queue_idx, default_compute_queue_idx) =
+                match (maybe_graphics_queue_idx, maybe_present_queue_idx, maybe_transfer_queue_idx, maybe_compute_queue_idx) {
+                    (Some(q1), Some(q2), Some(q3), Some(q4)) => (q1, q2, q3, q4),
+                    _ => panic!("Unable to create all four of: graphics queue, present queue, transfer, compute queue!"),
                 };
 
             let mut pools = Vec::new();
@@ -715,6 +729,7 @@ impl InnerDevice {
             queue_set.default_graphics_queue_idx = default_graphics_queue_idx;
             queue_set.default_present_queue_idx = default_present_queue_idx;
             queue_set.default_transfer_queue_idx = default_transfer_queue_idx;
+            queue_set.default_compute_queue_idx = default_compute_queue_idx;
         }
 
         Ok(this)
@@ -901,6 +916,16 @@ impl InnerDevice {
     fn get_default_transfer_pool(&self) -> Rc<CommandPool> {
         let queue_set = self.queue_set.borrow();
         Rc::clone(&queue_set.pools[queue_set.default_transfer_queue_idx])
+    }
+
+    fn get_default_compute_queue(&self) -> Rc<Queue> {
+        let queue_set = self.queue_set.borrow();
+        Rc::clone(&queue_set.queues[queue_set.default_compute_queue_idx])
+    }
+
+    fn get_default_compute_pool(&self) -> Rc<CommandPool> {
+        let queue_set = self.queue_set.borrow();
+        Rc::clone(&queue_set.pools[queue_set.default_compute_queue_idx])
     }
 
     fn query_swapchain_support(&self) -> Result<utils::SwapChainSupport> {
