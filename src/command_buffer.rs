@@ -544,7 +544,7 @@ impl BufferWriter {
 
     pub fn transfer_buffer_ownership<T: HasBuffer>(
         &mut self,
-        buffer: T,
+        buffer: &T,
         src: Rc<Queue>,
         src_stage_flags: vk::PipelineStageFlags,
         src_access_mask: vk::AccessFlags,
