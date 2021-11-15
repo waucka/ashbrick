@@ -390,7 +390,7 @@ impl DescriptorBindings {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct DescriptorSetLayout {
     device: Rc<InnerDevice>,
     pub (crate) layout: vk::DescriptorSetLayout,
@@ -538,7 +538,7 @@ impl DescriptorPool {
     pub fn create_descriptor_sets(
         &mut self,
         count: usize,
-        layout: &DescriptorSetLayout,
+        layout: Rc<DescriptorSetLayout>,
         items: &[Rc<dyn DescriptorRef>],
     ) -> Result<Vec<Rc<DescriptorSet>>> {
         if items.len() != layout.bindings.len() {
@@ -582,7 +582,7 @@ impl DescriptorPool {
     fn allocate(
         &mut self,
         count: usize,
-        layout: &DescriptorSetLayout,
+        layout: Rc<DescriptorSetLayout>,
     ) -> Result<Vec<Rc<DescriptorSet>>> {
         self.allocate_internal(count, layout, true)
     }
@@ -590,7 +590,7 @@ impl DescriptorPool {
     fn allocate_internal(
         &mut self,
         count: usize,
-        layout: &DescriptorSetLayout,
+        layout: Rc<DescriptorSetLayout>,
         retry: bool,
     ) -> Result<Vec<Rc<DescriptorSet>>> {
         let mut layouts: Vec<vk::DescriptorSetLayout> = vec![];

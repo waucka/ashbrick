@@ -12,7 +12,7 @@ use std::ptr;
 
 pub struct ComputePipelineParameters {
     shader: ComputeShader,
-    set_layouts: Vec<DescriptorSetLayout>,
+    set_layouts: Vec<Rc<DescriptorSetLayout>>,
     push_constants: Vec<vk::PushConstantRange>,
 }
 
@@ -25,7 +25,7 @@ impl ComputePipelineParameters {
         }
     }
 
-    pub fn with_set_layout(mut self, layout: DescriptorSetLayout) -> Self {
+    pub fn with_set_layout(mut self, layout: Rc<DescriptorSetLayout>) -> Self {
         self.set_layouts.push(layout);
         self
     }

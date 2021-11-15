@@ -649,7 +649,7 @@ where
         render_pass: &RenderPass,
         vert_shader: VertexShader<V>,
         frag_shader: FragmentShader,
-        set_layouts: &[&DescriptorSetLayout],
+        set_layouts: &[Rc<DescriptorSetLayout>],
         params: GraphicsPipelineParameters,
     ) -> Result<Self> {
         let mut vk_set_layouts = vec![];
@@ -722,7 +722,7 @@ where
         render_pass: &RenderPass,
         vert_shader: VertexShader<V>,
         frag_shader: FragmentShader,
-        set_layouts: &[&DescriptorSetLayout],
+        set_layouts: &[Rc<DescriptorSetLayout>],
         params: GraphicsPipelineParameters,
     ) -> Result<Self> {
         Self::from_inner(
