@@ -390,7 +390,7 @@ impl DescriptorBindings {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DescriptorSetLayout {
     device: Rc<InnerDevice>,
     pub (crate) layout: vk::DescriptorSetLayout,
