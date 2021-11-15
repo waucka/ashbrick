@@ -581,6 +581,51 @@ impl BufferWriter {
         );
     }
 
+    pub fn transfer_buffer_ownership_multi(
+        &mut self,
+        transfers: Vec<BufferTransferRequest>,
+        src_stage_flags: vk::PipelineStageFlags,
+        dst_stage_flags: vk::PipelineStageFlags,
+        deps: vk::DependencyFlags,
+    ) {
+        let mut barriers = Vec::new();
+        for transfer in transfers {
+            if transfer.src.family_idx == transfer.dst.family_idx {
+                // No transfer needed!
+                continue;
+            }
+            let buf = transfer.buffer.get_buffer();
+            let size = transfer.buffer.get_size();
+            barriers.push(vk::BufferMemoryBarrier{
+                s_type: vk::StructureType::BUFFER_MEMORY_BARRIER,
+                p_next: ptr::null(),
+                src_access_mask: transfer.src_access_mask,
+                dst_access_mask: transfer.dst_access_mask,
+                src_queue_family_index: transfer.src.family_idx,
+                dst_queue_family_index: transfer.dst.family_idx,
+                buffer: buf,
+                offset: 0,
+                size: size,
+            });
+        }
+
+        if barriers.is_empty() {
+            // No transfers were actually needed!
+            return;
+        }
+
+        self.pipeline_barrier(
+            src_stage_flags,
+            dst_stage_flags,
+            deps,
+            // No generic memory barriers needed for this
+            &[],
+            &barriers,
+            // No image memory barriers needed for this, obviously
+            &[],
+        );
+    }
+
     pub fn copy_buffer(
         &mut self,
         src_buffer: Rc<Buffer>,
@@ -812,6 +857,32 @@ impl Drop for BufferWriter {
             if let Err(e) = self.device.device.end_command_buffer(self.command_buffer) {
                 println!("Failed to end command buffer: {:?}", e);
             }
+        }
+    }
+}
+
+pub struct BufferTransferRequest {
+    buffer: Rc<dyn HasBuffer>,
+    src: Rc<Queue>,
+    src_access_mask: vk::AccessFlags,
+    dst: Rc<Queue>,
+    dst_access_mask: vk::AccessFlags,
+}
+
+impl BufferTransferRequest {
+    pub fn new(
+        buffer: Rc<dyn HasBuffer>,
+        src: Rc<Queue>,
+        src_access_mask: vk::AccessFlags,
+        dst: Rc<Queue>,
+        dst_access_mask: vk::AccessFlags,
+    ) -> Self {
+        Self{
+            buffer,
+            src,
+            src_access_mask,
+            dst,
+            dst_access_mask,
         }
     }
 }
