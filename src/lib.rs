@@ -284,6 +284,7 @@ pub struct DeviceBuilder {
     extensions: Vec<String>,
     validation_enabled: bool,
     windowing_prefs: platforms::WindowingPreferences,
+    features_chain: *mut c_void,
 }
 
 impl DeviceBuilder {
@@ -295,6 +296,7 @@ impl DeviceBuilder {
             extensions: Vec::new(),
             validation_enabled: false,
             windowing_prefs: Default::default(),
+            features_chain: ptr::null_mut(),
         }
     }
 
@@ -328,6 +330,11 @@ impl DeviceBuilder {
 
     pub fn with_windowing_prefs(mut self, prefs: platforms::WindowingPreferences) -> Self {
         self.windowing_prefs = prefs;
+        self
+    }
+
+    pub fn with_features_chain(mut self, features_chain: *mut c_void) -> Self {
+        self.features_chain = features_chain;
         self
     }
 }
@@ -648,6 +655,7 @@ impl InnerDevice {
             physical_device,
             &queue_infos,
             builder.get_extensions(),
+            builder.features_chain,
         );
         let swapchain_loader = ash::extensions::khr::Swapchain::new(&instance, &device);
 
@@ -1023,6 +1031,7 @@ fn create_logical_device(
     physical_device: vk::PhysicalDevice,
     queue_infos: &Vec<QueueInfo>,
     enabled_extensions: &[String],
+    features_chain: *mut c_void,
 ) -> ash::Device {
     let device_properties = unsafe{ instance.get_physical_device_properties(physical_device) };
     let device_name = vk_to_string(&device_properties.device_name);
@@ -1066,7 +1075,7 @@ fn create_logical_device(
 
     let mut device_address_features = vk::PhysicalDeviceBufferDeviceAddressFeatures{
         s_type: vk::StructureType::PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
-        p_next: ptr::null_mut(),
+        p_next: features_chain,
         buffer_device_address: vk::TRUE,
         ..Default::default()
     };
@@ -1075,17 +1084,6 @@ fn create_logical_device(
         s_type: vk::StructureType::PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES,
         p_next: (&mut device_address_features as *mut _) as *mut c_void,
         imageless_framebuffer: vk::TRUE,
-        ..Default::default()
-    };
-
-    let mut descriptor_indexing_features = vk::PhysicalDeviceDescriptorIndexingFeatures{
-        s_type: vk::StructureType::PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
-        p_next: (&mut imageless_framebuffer_features as *mut _) as *mut c_void,
-        runtime_descriptor_array: vk::TRUE,
-        shader_sampled_image_array_non_uniform_indexing: vk::TRUE,
-        shader_storage_buffer_array_non_uniform_indexing: vk::TRUE,
-        shader_storage_image_array_non_uniform_indexing: vk::TRUE,
-        descriptor_binding_partially_bound: vk::TRUE,
         ..Default::default()
     };
     //descriptor_indexing_features.shader_uniform_buffer_array_non_uniform_indexing = vk::TRUE;
@@ -1098,7 +1096,7 @@ fn create_logical_device(
 
     let physical_device_features2 = vk::PhysicalDeviceFeatures2{
         s_type: vk::StructureType::PHYSICAL_DEVICE_FEATURES_2,
-        p_next: (&mut descriptor_indexing_features as *mut _) as *mut _,
+        p_next: (&mut imageless_framebuffer_features as *mut _) as *mut _,
         features: physical_device_features,
     };
 
