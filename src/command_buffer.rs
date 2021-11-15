@@ -849,6 +849,24 @@ impl BufferWriter {
             );
         }
     }
+
+    pub fn push_constants<T: bytemuck::Pod>(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        stage_flags: vk::ShaderStageFlags,
+        offset: u32,
+        constants: &T,
+    ) {
+        unsafe {
+            self.device.device.cmd_push_constants(
+                self.command_buffer,
+                pipeline_layout,
+                stage_flags,
+                offset,
+                bytemuck::bytes_of(constants),
+            );
+        }
+    }
 }
 
 impl Drop for BufferWriter {
