@@ -561,6 +561,7 @@ pub struct GraphicsPipelineParameters {
     depth_write_enable: vk::Bool32,
     depth_compare_op: vk::CompareOp,
     subpass: SubpassRef,
+    push_constants: Vec<vk::PushConstantRange>,
 }
 
 impl GraphicsPipelineParameters {
@@ -575,6 +576,7 @@ impl GraphicsPipelineParameters {
             depth_write_enable: vk::FALSE,
             depth_compare_op: vk::CompareOp::ALWAYS,
             subpass,
+            push_constants: Vec::new(),
         }
     }
 
@@ -617,6 +619,11 @@ impl GraphicsPipelineParameters {
         self.depth_write_enable = vk::TRUE;
         self
     }
+
+    pub fn with_push_constant(mut self, push_constant: vk::PushConstantRange) -> Self {
+        self.push_constants.push(push_constant);
+        self
+    }
 }
 
 pub struct GraphicsPipeline<V>
@@ -657,8 +664,12 @@ where
             flags: vk::PipelineLayoutCreateFlags::empty(),
             set_layout_count: vk_set_layouts.len() as u32,
             p_set_layouts: vk_set_layouts.as_ptr(),
-            push_constant_range_count: 0,
-            p_push_constant_ranges: ptr::null(),
+            push_constant_range_count: params.push_constants.len() as u32,
+            p_push_constant_ranges: if params.push_constants.is_empty() {
+                ptr::null()
+            } else {
+                params.push_constants.as_ptr()
+            },
         };
         dbg!(&pipeline_layout_create_info);
 

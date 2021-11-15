@@ -10,21 +10,50 @@ use std::ffi::CString;
 use std::rc::Rc;
 use std::ptr;
 
-pub struct ComputePipeline
-{
+pub struct ComputePipelineParameters {
+    shader: ComputeShader,
+    set_layouts: Vec<DescriptorSetLayout>,
+    push_constants: Vec<vk::PushConstantRange>,
+}
+
+impl ComputePipelineParameters {
+    pub fn new(shader: ComputeShader) -> Self {
+        Self{
+            shader,
+            set_layouts: Vec::new(),
+            push_constants: Vec::new(),
+        }
+    }
+
+    pub fn with_set_layout(mut self, layout: DescriptorSetLayout) -> Self {
+        self.set_layouts.push(layout);
+        self
+    }
+
+    pub fn with_push_constant(mut self, push_constant: vk::PushConstantRange) -> Self {
+        self.push_constants.push(push_constant);
+        self
+    }
+}
+
+pub struct ComputePipeline {
     device: Rc<InnerDevice>,
     pipeline_layout: vk::PipelineLayout,
     pub (crate) pipeline: RefCell<vk::Pipeline>,
     _shader: ComputeShader,
 }
 
-impl ComputePipeline
-{
+impl ComputePipeline {
     fn from_inner(
         device: Rc<InnerDevice>,
-        shader: ComputeShader,
-        set_layouts: &[&DescriptorSetLayout],
+        params: ComputePipelineParameters,
     ) -> Result<Self> {
+        let ComputePipelineParameters{
+            shader,
+            set_layouts,
+            push_constants,
+        } = params;
+
         let mut vk_set_layouts = vec![];
         for layout in set_layouts.iter() {
             vk_set_layouts.push(layout.layout);
@@ -36,8 +65,12 @@ impl ComputePipeline
             flags: vk::PipelineLayoutCreateFlags::empty(),
             set_layout_count: vk_set_layouts.len() as u32,
             p_set_layouts: vk_set_layouts.as_ptr(),
-            push_constant_range_count: 0,
-            p_push_constant_ranges: ptr::null(),
+            push_constant_range_count: push_constants.len() as u32,
+            p_push_constant_ranges: if push_constants.is_empty() {
+                ptr::null()
+            } else {
+                push_constants.as_ptr()
+            },
         };
         dbg!(&pipeline_layout_create_info);
 
@@ -77,13 +110,11 @@ impl ComputePipeline
 
     pub fn new(
         device: &Device,
-        shader: ComputeShader,
-        set_layouts: &[&DescriptorSetLayout],
+        params: ComputePipelineParameters,
     ) -> Result<Self> {
         Self::from_inner(
             device.inner.clone(),
-            shader,
-            set_layouts,
+            params,
         )
     }
 
