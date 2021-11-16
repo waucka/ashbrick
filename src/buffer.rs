@@ -566,7 +566,7 @@ impl StorageBuffer {
         &self,
         num_indices: usize,
     ) -> Option<IndexBuffer> {
-        if self.extra_usage_flags.contains(vk::BufferUsageFlags::VERTEX_BUFFER) {
+        if self.extra_usage_flags.contains(vk::BufferUsageFlags::INDEX_BUFFER) {
             Some(IndexBuffer{
                 buf: Rc::clone(&self.buf),
                 len: num_indices,
