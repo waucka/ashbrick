@@ -1,4 +1,5 @@
 use ash::vk;
+use log::{trace, error};
 
 use std::rc::Rc;
 use std::ptr;
@@ -417,13 +418,13 @@ impl Image {
 
 impl Drop for Image {
     fn drop(&mut self) {
-        //println!("Dropping image {:?}", self.img);
+        trace!("Dropping image {:?}", self.img);
         // If we don't have an allocation for it, then we aren't
         // responsible for destroying it.
         if let Some(allocation) = &self.allocation {
             match self.device.destroy_image(self.img, allocation.clone()) {
                 Ok(_) => (),
-                Err(e) => println!("Failed to destroy image: {}", e),
+                Err(e) => error!("Failed to destroy image: {}", e),
             }
         }
     }
@@ -482,7 +483,7 @@ impl ImageView {
 
 impl Drop for ImageView {
     fn drop(&mut self) {
-        //println!("Dropping image view {:?}", self.view);
+        trace!("Dropping image view {:?}", self.view);
         unsafe {
             self.device.device.destroy_image_view(self.view, None);
         }

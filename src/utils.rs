@@ -1,6 +1,7 @@
 use ash::vk;
 use ash::vk::{api_version_major, api_version_minor, api_version_patch};
 use gpu_allocator::vulkan::*;
+use log::{info, error};
 
 use std::collections::HashSet;
 use std::ffi::CString;
@@ -110,10 +111,10 @@ pub fn check_device_extension_support(
 
     let mut available_extension_names = vec![];
 
-    println!("\tAvailable device extensions:");
+    info!("\tAvailable device extensions:");
     for extension in available_extensions.iter() {
         let extension_name = vk_to_string(&extension.extension_name);
-        println!(
+        info!(
             "\t\tName: {}, Version: {}",
             extension_name, extension.spec_version,
         );
@@ -145,7 +146,7 @@ pub fn pick_physical_device(
             "Failed to enumerate physical devices",
         )?
     };
-    println!(
+    info!(
         "{} devices (GPU) found with Vulkan support.",
         physical_devices.len()
     );
@@ -179,7 +180,7 @@ fn is_physical_device_suitable(
     };
 
     let device_name = vk_to_string(&device_properties.device_name);
-    println!(
+    info!(
         "\tDevice name: {}, id: {}, type: {}",
         device_name, device_properties.device_id, device_type,
     );
@@ -188,13 +189,13 @@ fn is_physical_device_suitable(
     let minor_version = api_version_minor(device_properties.api_version);
     let patch_version = api_version_patch(device_properties.api_version);
 
-    println!(
+    info!(
         "\tAPI version: {}.{}.{}",
         major_version, minor_version, patch_version,
     );
 
-    println!("\tSupported queue families: {}", device_queue_families.len());
-    println!("\t\tQueue count | Graphics, Compute, Transfer, Sparse Binding");
+    info!("\tSupported queue families: {}", device_queue_families.len());
+    info!("\t\tQueue count | Graphics, Compute, Transfer, Sparse Binding");
     for queue_family in device_queue_families.iter() {
         let is_graphics_supported = if queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
             "supported"
@@ -216,7 +217,7 @@ fn is_physical_device_suitable(
         } else  {
             "unsupported"
         };
-        println!(
+        info!(
             "\t\t{}\t    | {},  {},  {},  {}",
             queue_family.queue_count,
             is_graphics_supported,
@@ -226,7 +227,7 @@ fn is_physical_device_suitable(
         );
     }
 
-    println!(
+    info!(
         "\tGeometry shader support: {}",
         if device_features.geometry_shader == 1 {
             "yes"
@@ -331,9 +332,9 @@ fn try_create_instance(
         match entry.create_instance(&create_info, None) {
             Ok(v) => Ok(v),
             Err(ash::InstanceError::LoadError(msgs)) => {
-                eprintln!("LoadError:");
+                error!("LoadError:");
                 for msg in msgs {
-                    eprintln!("\t{}", msg);
+                    error!("\t{}", msg);
                 }
                 Err(Error::internal("Failed to create instance: load error (see stderr)"))
             },

@@ -1,5 +1,6 @@
 use ash::vk;
 use crevice::std140::{AsStd140, WriteStd140};
+use log::error;
 
 use std::rc::Rc;
 use std::marker::PhantomData;
@@ -232,7 +233,7 @@ impl Drop for Buffer {
     fn drop(&mut self) {
         match self.device.destroy_buffer(self.buf, self.allocation.clone()) {
             Ok(_) => (),
-            Err(e) => println!("Failed to destroy buffer: {}", e),
+            Err(e) => error!("Failed to destroy buffer: {}", e),
         }
     }
 }

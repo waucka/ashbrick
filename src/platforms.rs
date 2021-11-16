@@ -1,5 +1,6 @@
 use ash::{EntryCustom, Instance};
 use ash::vk;
+use log::trace;
 
 #[cfg(target_os = "windows")]
 use ash::extensions::khr::Win32Surface;
@@ -150,11 +151,11 @@ unsafe fn platform_create_surface<L>(
     } else {
         match create_wayland_surface(entry, instance, window) {
             Ok(surface) => {
-                println!("Created a Wayland surface");
+                trace!("Created a Wayland surface");
                 Ok(surface)
             },
             Err(_) => {
-                println!("Failed to create Wayland surface.  Trying X11...");
+                trace!("Failed to create Wayland surface.  Trying X11...");
                 create_x11_surface(entry, instance, window)
             },
         }

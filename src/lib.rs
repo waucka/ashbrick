@@ -5,6 +5,9 @@ pub use ash;
 pub use winit;
 #[cfg(feature = "egui")]
 pub use egui;
+pub use log;
+
+use log::error;
 
 use std::ptr;
 use std::cell::RefCell;
@@ -1205,7 +1208,7 @@ fn get_queues_from_device(
     let mut queues = vec![];
     for queue_info in queue_infos.iter() {
         if queue_info.queues.len() == 0 {
-            println!("A queue family with no queues in it?  This driver is on crack!");
+            error!("A queue family with no queues in it?  This driver is on crack!");
             continue;
         }
 

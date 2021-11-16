@@ -1,5 +1,6 @@
 use ash::vk;
 use crevice::std140::{AsStd140, WriteStd140};
+use log::{trace, warn};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -481,7 +482,7 @@ impl DescriptorPool {
     }
 
     pub fn reset(&mut self) -> Result<()> {
-        //println!("Resetting descriptor pool {}", self.name);
+        trace!("Resetting descriptor pool {}", self.name);
         let mut i = 0;
         for set in &self.sets {
             if Rc::strong_count(set) > 1 {
@@ -560,9 +561,9 @@ impl DescriptorPool {
                 set.add_dependency(Rc::<dyn DescriptorRef>::clone(item));
             }
             if DEBUG_DESCRIPTOR_SETS {
-                println!("Performing {} writes to descriptor set {:?}...", writes.len(), set.inner);
+                trace!("Performing {} writes to descriptor set {:?}...", writes.len(), set.inner);
                 for write in writes.iter() {
-                    println!(
+                    trace!(
                         "\tset: {:?}\n\tbinding: {}\n\ttype: {:?}\n\tcount: {}",
                         write.dst_set,
                         write.dst_binding,
@@ -636,7 +637,7 @@ impl Drop for DescriptorPool {
         let mut i = 0;
         for set in &self.sets {
             if Rc::strong_count(set) > 1 {
-                println!("Descriptor set {} has external references, but we are destroying its pool!", i);
+                warn!("Descriptor set {} has external references, but we are destroying its pool!", i);
             }
             i += 1;
         }

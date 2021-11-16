@@ -1,5 +1,6 @@
 use ash::vk;
 use image::GenericImageView;
+use log::trace;
 
 #[cfg(feature = "egui")]
 use std::sync::Arc;
@@ -122,11 +123,11 @@ impl Texture {
                         empty_image
                     },
                     |pixel_vector, position, (r, g, b): (f32, f32, f32)| {
-                        println!(
+                        /*trace!(
                             "[{}, {}] = ({}, {}, {})",
                             position.x(), position.y(),
                             r, g, b,
-                        );
+                        );*/
                         let y = position.y() + 1;
                         pixel_vector[y * position.x() * 3    ] = r;
                         pixel_vector[y * position.x() * 3 + 1] = g;
@@ -320,7 +321,7 @@ impl Texture {
             Ok(v) => v,
             Err(e) => return Err(Error::external(e, &format!("Failed to load image from {} bytes", bytes.len()))),
         };
-        println!("Loaded {} bytes in {}ms", bytes.len(), start.elapsed().as_millis());
+        trace!("Loaded {} bytes in {}ms", bytes.len(), start.elapsed().as_millis());
         Self::from_image(device, name, &image_object, srgb, mipmapped)
     }
 
@@ -330,7 +331,7 @@ impl Texture {
             Ok(v) => v,
             Err(e) => return Err(Error::external(e, &format!("Failed to load image {}", image_path.display()))),
         };
-        println!("Loaded {} in {}ms", image_path.display(), start.elapsed().as_millis());
+        trace!("Loaded {} in {}ms", image_path.display(), start.elapsed().as_millis());
         Self::from_image(device, name, &image_object, srgb, mipmapped)
     }
 
@@ -440,7 +441,7 @@ impl Texture {
             image.generate_mipmaps(
                 mip_levels,
             )?;
-            println!("Generated mipmaps in {}ms", start.elapsed().as_millis());
+            trace!("Generated mipmaps in {}ms", start.elapsed().as_millis());
         } else {
             image.transition_layout(
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,

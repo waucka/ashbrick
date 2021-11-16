@@ -1,4 +1,5 @@
 use ash::vk;
+use log::trace;
 
 use std::cell::RefCell;
 use std::ffi::CString;
@@ -122,7 +123,7 @@ impl Presenter {
             ((1_f32 / self.desired_fps as f32) * 1000_f32) as i64
         ) - millis_since_last_frame;
         if millis_until_next_frame > 2 {
-            //println!("Sleeping {}ms", millis_until_next_frame);
+            trace!("Sleeping {}ms", millis_until_next_frame);
             std::thread::sleep(Duration::from_millis(millis_until_next_frame as u64));
         }
 
@@ -251,8 +252,8 @@ impl Presenter {
         }
         self.submissions[swapchain_image.idx as usize] = submission_set;
 
-        //println!("Presenting a frame...");
-        //let start = std::time::Instant::now();
+        trace!("Presenting a frame...");
+        let start = std::time::Instant::now();
         let swapchains = [self.swapchain.as_ref().unwrap().swapchain];
         let present_info = vk::PresentInfoKHR{
             s_type: vk::StructureType::PRESENT_INFO_KHR,
@@ -278,7 +279,7 @@ impl Presenter {
 
         self.last_frame_duration = self.last_frame.elapsed();
         self.last_frame = Instant::now();
-        //println!("Presented frame in {}ns", start.elapsed().as_nanos());
+        trace!("Presented frame in {}ns", start.elapsed().as_nanos());
         Ok(SubmissionResults{
             results,
             presentation_result,

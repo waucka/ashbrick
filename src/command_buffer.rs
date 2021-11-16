@@ -1,5 +1,6 @@
 use ash::vk;
 use ash::vk::Handle;
+use log::error;
 
 use std::any::Any;
 use std::cell::RefCell;
@@ -873,7 +874,7 @@ impl Drop for BufferWriter {
     fn drop(&mut self) {
         unsafe {
             if let Err(e) = self.device.device.end_command_buffer(self.command_buffer) {
-                println!("Failed to end command buffer: {:?}", e);
+                error!("Failed to end command buffer: {:?}", e);
             }
         }
     }
