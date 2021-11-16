@@ -21,7 +21,7 @@ impl Shader {
     fn from_spv_file(device: Rc<InnerDevice>, spv_file: &Path) -> Result<Self> {
         let spv_bytes = Error::wrap_io(
             std::fs::read(spv_file),
-            "Failed to read SPIR-V file",
+            &format!("Failed to read SPIR-V file {}", spv_file.display()),
         )?;
         Shader::from_spv_bytes(device, spv_bytes)
     }
