@@ -12,7 +12,7 @@ use super::{Device, InnerDevice, Queue, FrameId};
 use super::compute::ComputePipeline;
 use super::descriptor::DescriptorSet;
 use super::renderer::{Presenter, SwapchainImageRef, RenderPass, GraphicsPipeline, SubpassRef, RenderPassData};
-use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer, Buffer};
+use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer};
 use super::image::Image;
 use super::shader::Vertex;
 use super::sync::{Semaphore, Fence};
@@ -627,10 +627,10 @@ impl BufferWriter {
         );
     }
 
-    pub fn copy_buffer(
+    pub fn copy_buffer<A: HasBuffer + 'static, B: HasBuffer + 'static>(
         &mut self,
-        src_buffer: Rc<Buffer>,
-        dst_buffer: Rc<Buffer>,
+        src_buffer: Rc<A>,
+        dst_buffer: Rc<B>,
         copy_regions: &[vk::BufferCopy],
     ) {
         unsafe {
