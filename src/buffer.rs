@@ -53,6 +53,29 @@ impl<T> MemoryMapping<T> {
         Ok(())
     }
 
+    fn extract_slice(&self, src: &mut [T]) -> Result<()> {
+        unsafe {
+            let data_ptr = match self.allocation.mapped_ptr() {
+                Some(v) => v.as_ptr() as *mut T,
+                None => return Err(Error::UnmappableBuffer),
+            };
+            src.as_mut_ptr().copy_from_nonoverlapping(data_ptr, src.len());
+        }
+        Ok(())
+    }
+
+    fn extract_item(&self, src: &mut T) -> Result<()> {
+        unsafe {
+            let data_ptr = match self.allocation.mapped_ptr() {
+                Some(v) => v.as_ptr() as *mut T,
+                None => return Err(Error::UnmappableBuffer),
+            };
+            let src_ptr = (src as *mut _) as *mut T;
+            src_ptr.copy_from_nonoverlapping(data_ptr, 1);
+        }
+        Ok(())
+    }
+
     fn get_writer(&self) -> Result<MemoryMappingWriter> {
         let data_ptr = match self.allocation.mapped_ptr() {
             Some(v) => v.as_ptr() as *mut u8,
@@ -216,6 +239,13 @@ impl Buffer {
         let mmap = MemoryMapping::new(self)?;
         mmap_fn(&mmap)
     }
+
+    pub fn with_memory_mapping_mut<T, F>(&self, mut mmap_fn: F) -> Result<()>
+    where
+        F: FnMut(&MemoryMapping<T>) -> Result<()> {
+        let mmap = MemoryMapping::new(self)?;
+        mmap_fn(&mmap)
+    }
 }
 
 impl HasBuffer for Buffer {
@@ -269,6 +299,51 @@ impl UploadSourceBuffer {
 }
 
 impl HasBuffer for UploadSourceBuffer {
+    fn get_buffer(&self) -> vk::Buffer {
+        self.buf.buf
+    }
+
+    fn get_size(&self) -> vk::DeviceSize {
+        self.buf.size
+    }
+}
+
+pub struct DownloadDestinationBuffer {
+    buf: Rc<Buffer>,
+}
+
+impl DownloadDestinationBuffer {
+    pub fn new(
+        device: &Device,
+        name: &str,
+        size: vk::DeviceSize,
+    ) -> Result<Self> {
+        Ok(Self {
+            buf: Rc::new(Buffer::new(
+                Rc::clone(&device.inner),
+                name,
+                size,
+                vk::BufferUsageFlags::TRANSFER_DST,
+                MemoryUsage::CpuToGpu,
+                vk::SharingMode::EXCLUSIVE,
+            )?),
+        })
+    }
+
+    pub fn extract_slice<T>(&self, data: &mut [T]) -> Result<()> {
+        self.buf.with_memory_mapping_mut(|mmap| {
+            mmap.extract_slice(data)
+        })
+    }
+
+    pub fn extract_item<T>(&self, data: &mut T) -> Result<()> {
+        self.buf.with_memory_mapping_mut(|mmap| {
+            mmap.extract_item(data)
+        })
+    }
+}
+
+impl HasBuffer for DownloadDestinationBuffer {
     fn get_buffer(&self) -> vk::Buffer {
         self.buf.buf
     }
