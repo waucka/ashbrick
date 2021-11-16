@@ -1,5 +1,6 @@
 use ash::vk;
 use crevice::std140::{AsStd140, WriteStd140};
+use crevice::std430::WriteStd430;
 use log::error;
 
 use std::rc::Rc;
@@ -246,6 +247,56 @@ impl Buffer {
         let mmap = MemoryMapping::new(self)?;
         mmap_fn(&mmap)
     }
+
+    pub unsafe fn get_pointer<T>(&self) -> Result<*const T> {
+        match self.allocation.mapped_ptr() {
+            Some(v) => Ok(v.as_ptr() as *const T),
+            None => Err(Error::UnmappableBuffer),
+        }
+    }
+
+    pub unsafe fn get_pointer_mut<T>(&self) -> Result<*mut T> {
+        match self.allocation.mapped_ptr() {
+            Some(v) => Ok(v.as_ptr() as *mut T),
+            None => Err(Error::UnmappableBuffer),
+        }
+    }
+
+    pub unsafe fn get_byte_slice<'a, 'b>(&'a self) -> Result<&'b [u8]>
+    where
+        'a: 'b
+    {
+        let size = self.get_size();
+        let data_ptr = self.get_pointer()?;
+        Ok(std::slice::from_raw_parts(data_ptr, size as usize))
+    }
+
+    pub unsafe fn get_byte_slice_mut<'a, 'b>(&'a self) -> Result<&'b mut [u8]>
+    where
+        'a: 'b
+    {
+        let size = self.get_size();
+        let data_ptr = self.get_pointer_mut()?;
+        Ok(std::slice::from_raw_parts_mut(data_ptr, size as usize))
+    }
+
+    pub fn copy_data_std140<T: WriteStd140>(&self, data: &T) -> Result<usize> {
+        let data_slice = unsafe { self.get_byte_slice_mut()? };
+        let mut writer = crevice::std140::Writer::new(data_slice);
+        Error::wrap_external(
+            writer.write(data),
+            "Failed to copy data in std140 format",
+        )
+    }
+
+    pub fn copy_data_std430<T: WriteStd430>(&self, data: &T) -> Result<usize> {
+        let data_slice = unsafe { self.get_byte_slice_mut()? };
+        let mut writer = crevice::std430::Writer::new(data_slice);
+        Error::wrap_external(
+            writer.write(data),
+            "Failed to copy data in std430 format",
+        )
+    }
 }
 
 impl HasBuffer for Buffer {
@@ -296,6 +347,14 @@ impl UploadSourceBuffer {
             Ok(())
         })
     }
+
+    pub fn copy_data_std140<T: WriteStd140>(&self, data: &T) -> Result<usize> {
+        self.buf.copy_data_std140(data)
+    }
+
+    pub fn copy_data_std430<T: WriteStd430>(&self, data: &T) -> Result<usize> {
+        self.buf.copy_data_std430(data)
+    }
 }
 
 impl HasBuffer for UploadSourceBuffer {
@@ -324,7 +383,7 @@ impl DownloadDestinationBuffer {
                 name,
                 size,
                 vk::BufferUsageFlags::TRANSFER_DST,
-                MemoryUsage::CpuToGpu,
+                MemoryUsage::GpuToCpu,
                 vk::SharingMode::EXCLUSIVE,
             )?),
         })
@@ -649,13 +708,6 @@ impl StorageBuffer {
         } else {
             None
         }
-    }
-
-    pub fn copy_data<T>(&self, data: &[T]) -> Result<()> {
-        self.buf.with_memory_mapping(|mmap| {
-            mmap.copy_slice(data)?;
-            Ok(())
-        })
     }
 }
 
