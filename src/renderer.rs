@@ -67,7 +67,7 @@ impl Presenter {
         )?;
 
         let num_swapchain_images = swapchain.get_num_images();
-        dbg!(num_swapchain_images);
+        trace!("num_swapchain_images={}", num_swapchain_images);
 
         let submissions = vec![None; num_swapchain_images];
 
@@ -440,9 +440,9 @@ impl Swapchain {
         } else {
             image_count
         };
-        dbg!(swapchain_support.capabilities.min_image_count);
-        dbg!(swapchain_support.capabilities.max_image_count);
-        dbg!(image_count);
+        trace!("Minimum swapchain images: {}", swapchain_support.capabilities.min_image_count);
+        trace!("Maximum swapchain images: {}", swapchain_support.capabilities.max_image_count);
+        trace!("Creating {} swapchain images...", image_count);
 
         let (image_sharing_mode, queue_family_indices) =
             if device.get_default_graphics_queue() != device.get_default_present_queue() {
@@ -655,7 +655,6 @@ where
     ) -> Result<Self> {
         let mut vk_set_layouts = vec![];
         for layout in set_layouts.iter() {
-            dbg!(&layout.layout);
             vk_set_layouts.push(layout.layout);
         }
 
@@ -672,7 +671,6 @@ where
                 params.push_constants.as_ptr()
             },
         };
-        dbg!(&pipeline_layout_create_info);
 
         let pipeline_layout = unsafe {
             Error::wrap_result(

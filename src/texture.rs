@@ -148,9 +148,6 @@ impl Texture {
             None => return Err(Error::Generic(format!("OpenEXR image {} contains no layers", path.display()))),
         };
         let pixels = &first_layer.channel_data.pixels;
-        dbg!(pixels[pixels.len()-3]);
-        dbg!(pixels[pixels.len()-2]);
-        dbg!(pixels[pixels.len()-1]);
 
         let image_size =
             (std::mem::size_of::<f32>() * pixels.len()) as vk::DeviceSize;

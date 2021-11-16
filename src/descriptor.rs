@@ -407,8 +407,8 @@ impl DescriptorSetLayout {
             let mut binding_sets = vec![];
             let mut binding_flags = vec![];
             for (binding, flags) in bindings.bindings.iter() {
-                dbg!(binding);
-                dbg!(flags);
+                trace!("binding={:?}", binding);
+                trace!("flags={:?}", flags);
                 binding_sets.push(binding.clone());
                 binding_flags.push(*flags);
             }
@@ -428,7 +428,7 @@ impl DescriptorSetLayout {
             binding_count: binding_set.len() as u32,
             p_bindings: binding_set.as_ptr(),
         };
-        dbg!(&layout_info);
+
         Ok(Self{
             device: device.inner.clone(),
             layout: unsafe {
@@ -436,7 +436,6 @@ impl DescriptorSetLayout {
                     device.inner.device.create_descriptor_set_layout(&layout_info, None),
                     "Failed to create descriptor set layout",
                 )?;
-                dbg!(&layout);
                 layout
             },
             bindings,

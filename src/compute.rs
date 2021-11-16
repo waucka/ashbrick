@@ -72,7 +72,6 @@ impl ComputePipeline {
                 push_constants.as_ptr()
             },
         };
-        dbg!(&pipeline_layout_create_info);
 
         let pipeline_layout = unsafe {
             Error::wrap_result(
