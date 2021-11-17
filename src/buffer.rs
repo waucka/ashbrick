@@ -297,6 +297,16 @@ impl Buffer {
             "Failed to copy data in std430 format",
         )
     }
+
+    pub fn get_writer_std140(&self) -> Result<crevice::std140::Writer<&mut [u8]>> {
+        let data_slice = unsafe { self.get_byte_slice_mut()? };
+        Ok(crevice::std140::Writer::new(data_slice))
+    }
+
+    pub fn get_writer_std430(&self) -> Result<crevice::std430::Writer<&mut [u8]>> {
+        let data_slice = unsafe { self.get_byte_slice_mut()? };
+        Ok(crevice::std430::Writer::new(data_slice))
+    }
 }
 
 impl HasBuffer for Buffer {
@@ -354,6 +364,14 @@ impl UploadSourceBuffer {
 
     pub fn copy_data_std430<T: WriteStd430>(&self, data: &T) -> Result<usize> {
         self.buf.copy_data_std430(data)
+    }
+
+    pub fn get_writer_std140(&self) -> Result<crevice::std140::Writer<&mut [u8]>> {
+        self.buf.get_writer_std140()
+    }
+
+    pub fn get_writer_std430(&self) -> Result<crevice::std430::Writer<&mut [u8]>> {
+        self.buf.get_writer_std430()
     }
 }
 
