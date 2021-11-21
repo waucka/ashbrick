@@ -208,6 +208,7 @@ impl Presenter {
             if let Some(submission_set) = &self.submissions[i] {
                 for submission in &submission_set.submissions {
                     if let Some(fence) = &submission.fence {
+                        trace!("Waiting for frame {} to finish rendering", i);
                         fence.wait(time)?;
                     }
                 }
