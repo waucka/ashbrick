@@ -1,5 +1,5 @@
 use ash::vk;
-use log::trace;
+use log::{trace, info};
 
 use std::cell::RefCell;
 use std::ffi::CString;
@@ -201,6 +201,20 @@ impl Presenter {
 
     pub fn forget_submission(&mut self, swapchain_image: SwapchainImageRef) {
         self.submissions[swapchain_image.idx as usize] = None;
+    }
+
+    pub fn wait_for_rendering(&mut self, time: u64) -> Result<()> {
+        for i in 0..self.submissions.len() {
+            if let Some(submission_set) = &self.submissions[i] {
+                for submission in &submission_set.submissions {
+                    if let Some(fence) = &submission.fence {
+                        fence.wait(time)?;
+                    }
+                }
+            }
+            self.submissions[i] = None;
+        }
+        Ok(())
     }
 
     // Returns submission results for each submitted framebuffer.
@@ -1640,6 +1654,7 @@ impl Framebuffer {
         height: u32,
         msaa_samples: vk::SampleCountFlags,
     ) -> Result<Vec<PerFrameSet<Rc<Texture>>>> {
+        info!("Generating new attachment textures for a {}x{} viewport", width, height);
         let mut textures = Vec::new();
         // Skip the first attachment in the list.  By convention, that one is the swapchain image.
         let att_slice = &render_pass.attachment_descriptions[1..];
