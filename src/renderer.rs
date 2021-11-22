@@ -994,6 +994,10 @@ where
             frag_shader_module,
             &self.params,
         )?;
+        // TODO: replace this with a simple pipeline holder object that implements Drop.
+        unsafe {
+            self.device.device.destroy_pipeline(*self.pipeline.borrow_mut(), None);
+        }
         *self.pipeline.borrow_mut() = pipeline;
         Ok(())
     }
