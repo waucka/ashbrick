@@ -83,13 +83,6 @@ impl SecondaryCommandBuffer {
     }
 }
 
-impl Drop for SecondaryCommandBuffer {
-    fn drop(&mut self) {
-        // Drop has been implemented solely so that SecondaryCommandBuffers can be recorded as
-        // dependencies for CommandBuffers.
-    }
-}
-
 impl super::NamedResource for SecondaryCommandBuffer {
     fn name(&self) -> &str {
         &self.name
