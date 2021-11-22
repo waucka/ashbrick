@@ -1,3 +1,6 @@
+//! This module contains miscellaneous utilities that don't seem to
+//! fit in anywhere else.  It should probably be broken up at some point.
+
 use ash::vk;
 use ash::vk::{api_version_major, api_version_minor, api_version_patch};
 use gpu_allocator::vulkan::*;

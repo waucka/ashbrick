@@ -1,3 +1,7 @@
+//! This module contains compute-specific code.
+//! I don't like it.  The compute pipeline code should probably
+//! live with the graphics pipeline code.
+
 use ash::vk;
 
 use super::{Device, InnerDevice};

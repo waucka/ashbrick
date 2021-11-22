@@ -1,3 +1,6 @@
+//! This module exposes the Vulkan synchronization objects in
+//! an idiomatic way.
+
 use ash::vk;
 
 use std::ptr;

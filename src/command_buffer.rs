@@ -1,3 +1,7 @@
+//! This module pertains to command buffers.  It includes convenience
+//! classes for writing to command buffers; you never need to call
+//! an "end recording" function yourself.
+
 use ash::vk;
 use ash::vk::Handle;
 use log::error;
@@ -19,12 +23,15 @@ use super::sync::{Semaphore, Fence};
 
 use super::errors::{Error, Result};
 
+/// A secondary command buffer.  These are not to be executed on their own;
+/// their purpose is to be executed by a primary command buffer.
 pub struct SecondaryCommandBuffer {
     buf: RefCell<CommandBuffer>,
     name: String,
 }
-
+//TODO: should secondary command buffers automatically use RENDER_PASS_CONTINUE?
 impl SecondaryCommandBuffer {
+    /// Create a new secondary command buffer
     pub fn new(
         device: &Device,
         pool: Rc<CommandPool>,
@@ -49,7 +56,7 @@ impl SecondaryCommandBuffer {
         self.buf.borrow_mut().reset()
     }
 
-    // TODO: should this be mut?
+    /// Record commands to the command buffer
     pub fn record<T, R>(
         &self,
         usage_flags: vk::CommandBufferUsageFlags,
@@ -95,13 +102,20 @@ impl super::HasHandle for SecondaryCommandBuffer {
     }
 }
 
+// A command pool
 pub struct CommandPool {
     device: Rc<InnerDevice>,
     queue_family: QueueFamilyRef,
     command_pool: vk::CommandPool,
+    // TODO: track command buffers allocated from this pool
+    //       and log an error if the pool is dropped while
+    //       command buffers still exist.
 }
 
 impl CommandPool {
+    /// Creates a new command pool.  `CommandPoolCreateFlags` are set using
+    /// `can_reset` and `transient_buffers`.  Use `transient_buffers` if this
+    /// command pool will be used 
     pub fn new(
         device: &Device,
         queue_family: QueueFamilyRef,
@@ -161,6 +175,7 @@ impl Drop for CommandPool {
     }
 }
 
+/// A primary command buffer
 pub struct CommandBuffer {
     device: Rc<InnerDevice>,
     pool: Rc<CommandPool>,
@@ -174,6 +189,7 @@ pub struct CommandBuffer {
 }
 
 impl CommandBuffer {
+    /// Creates a new primary command buffer
     pub fn new(
         device: &Device,
         pool: Rc<CommandPool>,
@@ -217,6 +233,7 @@ impl CommandBuffer {
         })
     }
 
+    /// Record commands to the command buffer
     pub fn record<T, R>(
         &mut self,
         usage_flags: vk::CommandBufferUsageFlags,
@@ -271,6 +288,13 @@ impl CommandBuffer {
         })
     }
 
+    /// Submit the command buffer to a queue with synchronization objects
+    /// - `queue`: Queue to submit to (make sure it's in the same queue family
+    ///            as the one associated with the command pool that this buffer
+    ///            was allocated from)
+    /// - `wait`: Wait for these semaphores before executing
+    /// - `signal_semaphores`: Signal these semaphores once finished
+    /// - `signal_fence`: Signal this fence once finished
     pub fn submit_synced(
         &self,
         queue: &Queue,
@@ -335,6 +359,7 @@ impl CommandBuffer {
         Ok(())
     }
 
+    /// Reset the command buffer
     pub fn reset(&mut self) -> Result<()> {
         unsafe {
             Error::wrap_result(
@@ -346,6 +371,7 @@ impl CommandBuffer {
         Ok(())
     }
 
+    /// Submit the command buffer and wait for it to execute
     pub fn submit_and_wait(
         &self,
         queue: &Queue,
@@ -368,6 +394,7 @@ impl CommandBuffer {
         Ok(())
     }
 
+    /// Create a command buffer, run it, wait for it to finish executing, and drop it
     pub fn run_oneshot<T>(
         device: &Device,
         pool: Rc<CommandPool>,
@@ -422,6 +449,7 @@ impl super::HasHandle for CommandBuffer {
     }
 }
 
+/// A type for writing commands to a buffer outside of a render pass
 pub struct BufferWriter {
     device: Rc<InnerDevice>,
     command_buffer: vk::CommandBuffer,
@@ -430,6 +458,7 @@ pub struct BufferWriter {
 }
 
 impl BufferWriter {
+    /// Join a render pass (only valid for secondary command buffers)
     pub fn join_render_pass<T, R>(&mut self, mut write_fn: T) -> Result<R>
     where
         T: FnMut(&mut RenderPassWriter) -> Result<R>
@@ -452,6 +481,8 @@ impl BufferWriter {
         Ok(result)
     }
 
+    /// Begin a render pass
+    /// - `first_subpass_uses_secondaries`: Start off with `vk::SubpassContents::SECONDARY_COMMAND_BUFFERS` instead of `INLINE`
     pub fn begin_render_pass<T, R>(
         &mut self,
         presenter: &Presenter,
@@ -527,6 +558,7 @@ impl BufferWriter {
         Ok(result)
     }
 
+    /// Write a pipeline barrier command
     pub fn pipeline_barrier(
         &mut self,
         src_stage_mask: vk::PipelineStageFlags,
@@ -549,6 +581,7 @@ impl BufferWriter {
         }
     }
 
+    /// Write a pipeline barrier command that transfers buffer ownership
     pub fn transfer_buffer_ownership<T: HasBuffer>(
         &mut self,
         buffer: &T,
@@ -588,6 +621,7 @@ impl BufferWriter {
         );
     }
 
+    /// Write a pipeline barrier command that transfers ownership of multiple buffers
     pub fn transfer_buffer_ownership_multi(
         &mut self,
         transfers: Vec<BufferTransferRequest>,
@@ -633,6 +667,7 @@ impl BufferWriter {
         );
     }
 
+    /// Write a command that copies the contents of one buffer to another
     pub fn copy_buffer<A: HasBuffer + 'static, B: HasBuffer + 'static>(
         &mut self,
         src_buffer: Rc<A>,
@@ -653,6 +688,7 @@ impl BufferWriter {
         self.dependencies.push(dst_buffer);
     }
 
+    /// Write a command that copies the contents of an `UploadSourceBuffer` to an `Image`
     pub fn copy_buffer_to_image(
         &mut self,
         src_buffer: Rc<UploadSourceBuffer>,
@@ -713,6 +749,7 @@ impl BufferWriter {
         );
     }
 
+    /// Write a command that blits one `Image` to another
     pub fn blit_image(
         &mut self,
         img_src: Rc<Image>,
@@ -785,6 +822,7 @@ impl BufferWriter {
         }
     }
 
+    /// Write a command that binds a graphics pipeline
     pub fn bind_graphics_pipeline<V: Vertex + 'static>(
         &mut self,
         pipeline: Rc<GraphicsPipeline<V>>,
@@ -799,6 +837,10 @@ impl BufferWriter {
         self.dependencies.push(pipeline);
     }
 
+    /// Write a command that binds graphics descriptor sets
+    /// - `pipeline_layout`: The layout of the pipeline to bind the sets to
+    /// - `descriptor_sets`: The descriptor sets to bind
+    /// - `first_set`: The index of the first set to bind (useful for avoiding redundant binding)
     pub fn bind_graphics_descriptor_sets(
         &mut self,
         pipeline_layout: vk::PipelineLayout,
@@ -813,6 +855,7 @@ impl BufferWriter {
         );
     }
 
+    /// Write a command that binds a compute pipeline
     pub fn bind_compute_pipeline(
         &mut self,
         pipeline: Rc<ComputePipeline>,
@@ -827,6 +870,7 @@ impl BufferWriter {
         self.dependencies.push(pipeline);
     }
 
+    /// Write a command that binds compute descriptor sets
     pub fn bind_compute_descriptor_sets(
         &mut self,
         pipeline_layout: vk::PipelineLayout,
@@ -841,6 +885,7 @@ impl BufferWriter {
         );
     }
 
+    /// Write a command that dispatches a compute shader
     pub fn dispatch(
         &self,
         group_count_x: u32,
@@ -857,6 +902,7 @@ impl BufferWriter {
         }
     }
 
+    /// Write a command to push a set of push constants
     pub fn push_constants<T: bytemuck::Pod>(
         &self,
         pipeline_layout: vk::PipelineLayout,
@@ -912,6 +958,7 @@ impl BufferTransferRequest {
     }
 }
 
+/// A type that writes commands to a command buffer inside a render pass
 pub struct RenderPassWriter {
     device: Rc<InnerDevice>,
     command_buffer: vk::CommandBuffer,
@@ -921,6 +968,7 @@ pub struct RenderPassWriter {
 }
 
 impl RenderPassWriter {
+    /// Writes commands that draws a vertex buffer
     pub fn draw<T: 'static>(
         &mut self,
         vertex_buffer: Rc<VertexBuffer<T>>,
@@ -944,6 +992,10 @@ impl RenderPassWriter {
         self.dependencies.push(vertex_buffer);
     }
 
+    /// Writes a command that draws vertices with no buffers.
+    /// This may seem useless, but it is sometimes possible
+    /// to generate the vertices from their index values
+    /// in the vertex shader.
     pub fn draw_no_vbo(
         &self,
         num_vertices: usize,
@@ -959,6 +1011,7 @@ impl RenderPassWriter {
         }
     }
 
+    /// Writes commands to draw a vertex buffer with an index buffer
     pub fn draw_indexed<T: 'static>(
         &mut self,
         vertex_buffer: Rc<VertexBuffer<T>>,
@@ -990,9 +1043,12 @@ impl RenderPassWriter {
         self.dependencies.push(index_buffer);
     }
 
-    pub fn next_subpass(&self, uses_secondaries: bool) {
+    /// Writes a command that advances to the next subpass
+    pub fn next_subpass(&self, uses_secondaries: bool) -> Result<()> {
         if !self.allow_subpass_increment {
-            panic!("VkCmdNextSubpass is not allowed on a secondary command buffer!");
+            return Err(Error::InvalidCommand(
+                "VkCmdNextSubpass is not allowed on a secondary command buffer!".to_string(),
+            ));
         }
         unsafe {
             self.device.device.cmd_next_subpass(
@@ -1004,8 +1060,10 @@ impl RenderPassWriter {
                 },
             );
         }
+        Ok(())
     }
 
+    /// Writes a command that executes secondary command buffers
     pub fn execute_commands(&mut self, secondaries: &[Rc<SecondaryCommandBuffer>]) {
         let mut vk_secondaries = Vec::new();
         for secondary in secondaries {

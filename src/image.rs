@@ -1,3 +1,7 @@
+//! This module contains image loading and handling code.  This is
+//! relatively low-level; most users will want to use the texture
+//! module instead.
+
 use ash::vk;
 use log::{trace, error};
 

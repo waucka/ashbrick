@@ -1,3 +1,9 @@
+//! This module is all about buffers.  It includes a number of
+//! convenience types to make it harder to do dumb things like
+//! getting your index and vertex buffers switched around, or
+//! using a vertex buffer with the wrong type of vertex data
+//! in it.
+
 use ash::vk;
 use crevice::std140::{AsStd140, WriteStd140};
 use crevice::std430::WriteStd430;

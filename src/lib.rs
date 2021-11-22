@@ -1,3 +1,10 @@
+//! A library that makes [`ash`] easier and less error-prone to work with
+//!
+//! It's kind of like [`Vulkano`], but far less ambitious.
+//!
+//! [`ash`]: https://crates.io/crates/ash
+//! [`Vulkano`]: http://vulkano.rs/
+
 use ash::vk;
 use winit::event_loop::EventLoop;
 

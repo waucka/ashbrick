@@ -1,3 +1,7 @@
+//! This module is all about shaders.  These shader types include some
+//! tricks to help the user avoid using a shader on the wrong type of
+//! data.
+
 use ash::vk;
 
 use std::path::Path;

@@ -1,3 +1,7 @@
+//! This module contains the custom Error and Result types for ashbrick.
+//! If you are writing code that integrates tightly with ashbrick, you
+//! will probably want to import both types for convenience.
+
 use std::fmt::{Debug, Display, Formatter};
 use ash::vk;
 
@@ -41,6 +45,7 @@ pub enum Error {
     SubmittedSecondaryCommandBuffer,
     QueueFamilyMismatch(QueueFamilyRef, QueueFamilyRef),
     InvalidQueueIndex(u32, u32),
+    InvalidCommand(String),
 }
 
 impl Error {
@@ -148,6 +153,7 @@ impl Display for Error {
             SubmittedSecondaryCommandBuffer => write!(f, "Tried to manually submit a secondary command buffer"),
             QueueFamilyMismatch(queue_family, buffer_family) => write!(f, "Tried to submit a buffer for queue family {} on a queue from family {}", buffer_family.idx, queue_family.idx),
             InvalidQueueIndex(queue_idx, family_idx) => write!(f, "Invalid queue index {} for queue family {}", queue_idx, family_idx),
+            InvalidCommand(msg) => write!(f, "{}", msg),
         }
     }
 }

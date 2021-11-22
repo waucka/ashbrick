@@ -1,3 +1,7 @@
+//! This module contains types for working with textures and samplers.
+//! It's relatively high-level, so users who want to load some textures
+//! will want to use this more than the image module.
+
 use ash::vk;
 use image::GenericImageView;
 use log::trace;

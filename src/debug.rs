@@ -1,3 +1,6 @@
+//! This module largely revolves around the validation layer.
+//! Users should never need to touch it.
+
 use ash::vk;
 use log::{trace, debug, warn, error, info};
 

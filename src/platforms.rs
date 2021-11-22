@@ -1,3 +1,6 @@
+//! This module contains platform-specific code.  Users will rarely
+//! need any of this, if ever.
+
 use ash::{EntryCustom, Instance};
 use ash::vk;
 use log::trace;

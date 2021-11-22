@@ -1,3 +1,8 @@
+//! This module has become a bit of a hodgepodge.  The graphics pipeline
+//! code should probably be split out into a separate module with the
+//! compute pipeline code, and the presenter isn't tremendously related
+//! to render passes.
+
 use ash::vk;
 use log::{trace, info};
 
