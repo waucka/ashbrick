@@ -1,6 +1,8 @@
 use std::fmt::{Debug, Display, Formatter};
 use ash::vk;
 
+use crate::QueueFamilyRef;
+
 #[derive(Debug)]
 pub enum Error {
     Generic(String),
@@ -36,6 +38,9 @@ pub enum Error {
     InvalidUniformWrite(usize, usize),
     NeedResize,
     SrgbNotAvailable,
+    SubmittedSecondaryCommandBuffer,
+    QueueFamilyMismatch(QueueFamilyRef, QueueFamilyRef),
+    InvalidQueueIndex(u32, u32),
 }
 
 impl Error {
@@ -140,6 +145,9 @@ impl Display for Error {
             InvalidUniformWrite(buf1, buf2) => write!(f, "Tried to write {} bytes to a {}-byte uniform buffer", buf1, buf2),
             NeedResize => write!(f, "Framebuffer needs resize"),
             SrgbNotAvailable => write!(f, "Automatic sRGB conversion is not available for 16 bit per channel formats"),
+            SubmittedSecondaryCommandBuffer => write!(f, "Tried to manually submit a secondary command buffer"),
+            QueueFamilyMismatch(queue_family, buffer_family) => write!(f, "Tried to submit a buffer for queue family {} on a queue from family {}", buffer_family.idx, queue_family.idx),
+            InvalidQueueIndex(queue_idx, family_idx) => write!(f, "Invalid queue index {} for queue family {}", queue_idx, family_idx),
         }
     }
 }

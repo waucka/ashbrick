@@ -9,7 +9,8 @@ use std::ptr;
 use std::path::Path;
 use std::cmp::max;
 
-use super::{Device, InnerDevice};
+use super::{Device, InnerDevice, Queue};
+use super::command_buffer::CommandPool;
 use super::image::{Image, ImageView, ImageBuilder};
 use super::buffer::UploadSourceBuffer;
 
@@ -27,6 +28,8 @@ impl Texture {
         device: &Device,
         name: &str,
         path: &Path,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         let data_bytes = Error::wrap_io(
             std::fs::read(path),
@@ -74,16 +77,20 @@ impl Texture {
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             mip_levels,
+            Rc::clone(&pool),
+            queue,
         )?;
 
         unsafe {
-            Image::copy_buffer_no_deps(&upload_buffer, &image)?;
+            Image::copy_buffer_no_deps(&upload_buffer, &image, Rc::clone(&pool), queue)?;
         }
 
         image.transition_layout(
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             mip_levels,
+            pool,
+            queue,
         )?;
 
         let image_view = Rc::new(ImageView::from_image(
@@ -106,6 +113,8 @@ impl Texture {
         device: &Device,
         name: &str,
         path: &Path,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         let image_res = {
             use exr::prelude::*;
@@ -175,16 +184,20 @@ impl Texture {
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             mip_levels,
+            Rc::clone(&pool),
+            queue,
         )?;
 
         unsafe {
-            Image::copy_buffer_no_deps(&upload_buffer, &image)?;
+            Image::copy_buffer_no_deps(&upload_buffer, &image, Rc::clone(&pool), queue)?;
         }
 
         image.transition_layout(
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             mip_levels,
+            pool,
+            queue,
         )?;
 
         let image_view = Rc::new(ImageView::from_image(
@@ -208,6 +221,8 @@ impl Texture {
         device: &Device,
         egui_texture: &Arc<egui::paint::Texture>,
         name: &str,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> anyhow::Result<Self> {
         let (image_width, image_height) = (egui_texture.width as u32, egui_texture.height as u32);
         let image_size =
@@ -238,6 +253,8 @@ impl Texture {
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             mip_levels,
+            pool,
+            queue,
         )?;
 
         unsafe {
@@ -248,6 +265,8 @@ impl Texture {
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             mip_levels,
+            pool,
+            queue,
         )?;
 
         let image_view = Rc::new(ImageView::from_image(
@@ -273,6 +292,8 @@ impl Texture {
         desired_layout: vk::ImageLayout,
         builder: ImageBuilder,
         name: &str,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         Self::from_image_builder_internal(
             device.inner.clone(),
@@ -281,6 +302,8 @@ impl Texture {
             desired_layout,
             builder,
             name,
+            pool,
+            queue,
         )
     }
 
@@ -291,9 +314,11 @@ impl Texture {
         desired_layout: vk::ImageLayout,
         builder: ImageBuilder,
         name: &str,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         let mut image = Image::new_internal(device, builder)?;
-        image.transition_layout(vk::ImageLayout::UNDEFINED, desired_layout, mip_levels)?;
+        image.transition_layout(vk::ImageLayout::UNDEFINED, desired_layout, mip_levels, pool, queue)?;
         let image_view = Rc::new(ImageView::from_image(
             &image,
             aspect,
@@ -312,47 +337,79 @@ impl Texture {
         format!("{:?}", self.image.img)
     }
 
-    pub fn from_bytes(device: &Device, name: &str, bytes: &[u8], srgb: bool, mipmapped: bool) -> Result<Self> {
+    pub fn from_bytes(
+        device: &Device,
+        name: &str,
+        bytes: &[u8],
+        srgb: bool,
+        mipmapped: bool,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+    ) -> Result<Self> {
         let start = std::time::Instant::now();
         let image_object = match image::load_from_memory(bytes) {
             Ok(v) => v,
             Err(e) => return Err(Error::external(e, &format!("Failed to load image from {} bytes", bytes.len()))),
         };
         trace!("Loaded {} bytes in {}ms", bytes.len(), start.elapsed().as_millis());
-        Self::from_image(device, name, &image_object, srgb, mipmapped)
+        Self::from_image(device, name, &image_object, srgb, mipmapped, pool, queue)
     }
 
-    pub fn from_file(device: &Device, name: &str, image_path: &Path, srgb: bool, mipmapped: bool) -> Result<Self> {
+    pub fn from_file(
+        device: &Device,
+        name: &str,
+        image_path: &Path,
+        srgb: bool,
+        mipmapped: bool,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+    ) -> Result<Self> {
         let start = std::time::Instant::now();
         let image_object = match image::open(image_path) {
             Ok(v) => v,
             Err(e) => return Err(Error::external(e, &format!("Failed to load image {}", image_path.display()))),
         };
         trace!("Loaded {} in {}ms", image_path.display(), start.elapsed().as_millis());
-        Self::from_image(device, name, &image_object, srgb, mipmapped)
+        Self::from_image(device, name, &image_object, srgb, mipmapped, pool, queue)
     }
 
-    pub fn from_image(device: &Device, name: &str, image_object: &image::DynamicImage, srgb: bool, mipmapped: bool) -> Result<Self> {
+    pub fn from_image(
+        device: &Device,
+        name: &str,
+        image_object: &image::DynamicImage,
+        srgb: bool,
+        mipmapped: bool,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+    ) -> Result<Self> {
         use image::DynamicImage::*;
         use image::buffer::ConvertBuffer;
         match image_object {
             ImageRgb8(img) => {
                 let image_object = ImageRgba8(img.convert());
-                Self::from_image_internal(device, name, &image_object, srgb, mipmapped)
+                Self::from_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
             },
             ImageRgb16(img) => {
                 let image_object = ImageRgba16(img.convert());
-                Self::from_image_internal(device, name, &image_object, srgb, mipmapped)
+                Self::from_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
             },
             ImageBgr8(img) => {
                 let image_object = ImageRgba8(img.convert());
-                Self::from_image_internal(device, name, &image_object, srgb, mipmapped)
+                Self::from_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
             },
-            image_object => Self::from_image_internal(device, name, image_object, srgb, mipmapped),
+            image_object => Self::from_image_internal(device, name, image_object, srgb, mipmapped, pool, queue),
         }
     }
 
-    fn from_image_internal(device: &Device, name: &str, image_object: &image::DynamicImage, srgb: bool, mipmapped: bool) -> Result<Self> {
+    fn from_image_internal(
+        device: &Device,
+        name: &str,
+        image_object: &image::DynamicImage,
+        srgb: bool,
+        mipmapped: bool,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+    ) -> Result<Self> {
         use image::DynamicImage::*;
         let (bytes_per_channel, channels_per_pixel, format) = match &image_object {
             ImageLuma8(_) => (1, 1, if srgb { vk::Format::R8_SRGB } else { vk::Format::R8_UNORM }),
@@ -374,7 +431,15 @@ impl Texture {
             height,
         };
 
-        Self::from_image_data(device, name, &image_data, format, mipmapped)
+        Self::from_image_data(
+            device,
+            name,
+            &image_data,
+            format,
+            mipmapped,
+            pool,
+            queue,
+        )
     }
 
     pub fn from_image_data(
@@ -383,6 +448,8 @@ impl Texture {
         image_data: &ImageData,
         format: vk::Format,
         mipmapped: bool,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         let (image_width, image_height) = (image_data.width, image_data.height);
         let size_of_pixel = image_data.bytes_per_channel * image_data.channels_per_pixel;
@@ -427,16 +494,25 @@ impl Texture {
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             mip_levels,
+            Rc::clone(&pool),
+            queue,
         )?;
 
         unsafe {
-            Image::copy_buffer_no_deps(&upload_buffer, &image)?;
+            Image::copy_buffer_no_deps(
+                &upload_buffer,
+                &image,
+                Rc::clone(&pool),
+                queue,
+            )?;
         }
 
         if mipmapped {
             let start = std::time::Instant::now();
             image.generate_mipmaps(
                 mip_levels,
+                pool,
+                queue,
             )?;
             trace!("Generated mipmaps in {}ms", start.elapsed().as_millis());
         } else {
@@ -444,6 +520,8 @@ impl Texture {
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 mip_levels,
+                pool,
+                queue,
             )?;
         }
 

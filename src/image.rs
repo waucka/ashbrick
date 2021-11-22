@@ -5,8 +5,8 @@ use std::rc::Rc;
 use std::ptr;
 use std::os::raw::c_void;
 
-use super::{Device, InnerDevice, MemoryUsage};
-use super::command_buffer::CommandBuffer;
+use super::{Device, InnerDevice, MemoryUsage, Queue};
+use super::command_buffer::{CommandBuffer, CommandPool};
 use super::buffer::UploadSourceBuffer;
 
 use super::errors::{Error, Result};
@@ -165,10 +165,13 @@ impl Image {
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
         mip_levels: u32,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<()> {
         CommandBuffer::run_oneshot_internal(
             self.device.clone(),
-            self.device.get_default_graphics_pool(),
+            pool,
+            queue,
             |writer| {
                 let src_access_mask;
                 let dst_access_mask;
@@ -257,11 +260,20 @@ impl Image {
     pub fn generate_mipmaps(
         &mut self,
         mip_levels: u32,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<()>{
         use std::cmp::max;
+
+        if mip_levels == 0 {
+            // Don't bother trying to create zero mipmaps.
+            return Ok(())
+        }
+
         super::command_buffer::CommandBuffer::run_oneshot_internal(
             Rc::clone(&self.device),
-            self.device.get_default_graphics_pool(),
+            pool,
+            queue,
             |writer| {
                 let mut image_barrier = vk::ImageMemoryBarrier{
                     s_type: vk::StructureType::IMAGE_MEMORY_BARRIER,
@@ -386,10 +398,13 @@ impl Image {
     pub fn copy_buffer(
         buffer: Rc<UploadSourceBuffer>,
         dst_img: Rc<Image>,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<()> {
         CommandBuffer::run_oneshot_internal(
             Rc::clone(&dst_img.device),
-            dst_img.device.get_default_transfer_pool(),
+            pool,
+            queue,
             |writer| {
                 writer.copy_buffer_to_image(
                     Rc::clone(&buffer),
@@ -402,10 +417,13 @@ impl Image {
     pub (crate) unsafe fn copy_buffer_no_deps(
         buffer: &UploadSourceBuffer,
         dst_img: &Image,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<()> {
         CommandBuffer::run_oneshot_internal(
             Rc::clone(&dst_img.device),
-            dst_img.device.get_default_transfer_pool(),
+            pool,
+            queue,
             |writer| {
                 writer.copy_buffer_to_image_no_deps(
                     buffer,

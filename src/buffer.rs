@@ -9,7 +9,7 @@ use std::ptr;
 
 use super::errors::{Error, Result};
 
-use super::{Device, InnerDevice, MemoryUsage};
+use super::{Device, InnerDevice, MemoryUsage, Queue};
 use super::command_buffer::{CommandBuffer, CommandPool};
 
 pub trait HasBuffer {
@@ -210,6 +210,7 @@ impl Buffer {
         src_buffer: Rc<Buffer>,
         dst_buffer: Rc<Buffer>,
         pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<()> {
         if src_buffer.size > dst_buffer.size {
             return Err(Error::InvalidBufferCopy(src_buffer.size, dst_buffer.size));
@@ -217,6 +218,7 @@ impl Buffer {
         CommandBuffer::run_oneshot_internal(
            src_buffer.device.clone(),
             pool,
+            queue,
             |writer| {
                 let copy_regions = [vk::BufferCopy{
                     src_offset: 0,
@@ -441,6 +443,8 @@ impl<T> VertexBuffer<T> {
         device: &Device,
         name: &str,
         data: &[T],
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         let buffer_size = std::mem::size_of_val(data) as vk::DeviceSize;
         let upload_buffer = UploadSourceBuffer::new(device, "temp-upload-source-buffer", buffer_size)?;
@@ -458,7 +462,8 @@ impl<T> VertexBuffer<T> {
         Buffer::copy(
             Rc::clone(&upload_buffer.buf),
             Rc::clone(&vertex_buffer),
-            device.inner.get_default_transfer_pool(),
+            pool,
+            queue,
         )?;
 
         Ok(Self{
@@ -493,6 +498,8 @@ impl IndexBuffer {
         device: &Device,
         name: &str,
         data: &[u32],
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         let buffer_size = std::mem::size_of_val(data) as vk::DeviceSize;
         let upload_buffer = UploadSourceBuffer::new(device, "temp-upload-source-buffer", buffer_size)?;
@@ -510,7 +517,8 @@ impl IndexBuffer {
         Buffer::copy(
             Rc::clone(&upload_buffer.buf),
             Rc::clone(&index_buffer),
-            device.inner.get_default_transfer_pool(),
+            pool,
+            queue,
         )?;
 
         Ok(Self{

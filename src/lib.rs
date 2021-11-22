@@ -7,8 +7,6 @@ pub use winit;
 pub use egui;
 pub use log;
 
-use log::error;
-
 use std::ptr;
 use std::cell::RefCell;
 use std::ffi::{CString, CStr};
@@ -58,8 +56,8 @@ pub mod sync;
 pub mod texture;
 pub mod descriptor;
 
-use command_buffer::CommandPool;
 use buffer::HasBuffer;
+use command_buffer::{CommandBuffer, CommandPool};
 
 pub fn vk_to_string(raw_string_array: &[c_char]) -> String {
     let raw_string = unsafe {
@@ -219,6 +217,7 @@ pub const ENGINE_NAME: &'static str = "Wanderer Engine";
 pub const ENGINE_VERSION: u32 = vk::make_api_version(0, 0, 1, 0);
 pub const VULKAN_API_VERSION: u32 = vk::make_api_version(0, 1, 2, 131);
 
+#[derive(Copy, Clone)]
 pub struct Queue {
     family_idx: u32,
     queue_idx: u32,
@@ -246,6 +245,12 @@ impl Queue {
             can_present,
             queue,
         })
+    }
+
+    pub fn get_family(&self) -> QueueFamilyRef {
+        QueueFamilyRef{
+            idx: self.family_idx,
+        }
     }
 
     pub fn can_do_graphics(&self) -> bool {
@@ -422,40 +427,26 @@ impl Device {
         &self.inner.window
     }
 
-    pub fn get_default_graphics_queue(&self) -> Rc<Queue> {
-        self.inner.get_default_graphics_queue()
+    pub fn get_queue_families(&self) -> Vec<QueueFamily> {
+        self.inner.queue_families.clone()
     }
 
-    pub fn get_default_graphics_pool(&self) -> Rc<CommandPool> {
-        self.inner.get_default_graphics_pool()
-    }
-
-    pub fn get_default_present_queue(&self) -> Rc<Queue> {
-        self.inner.get_default_present_queue()
-    }
-
-    pub fn get_default_transfer_queue(&self) -> Rc<Queue> {
-        self.inner.get_default_transfer_queue()
-    }
-
-    pub fn get_default_transfer_pool(&self) -> Rc<CommandPool> {
-        self.inner.get_default_transfer_pool()
-    }
-
-    pub fn get_default_compute_queue(&self) -> Rc<Queue> {
-        self.inner.get_default_compute_queue()
-    }
-
-    pub fn get_default_compute_pool(&self) -> Rc<CommandPool> {
-        self.inner.get_default_compute_pool()
-    }
-
-    pub fn get_queues(&self) -> Vec<Rc<Queue>> {
-        let mut queues = vec![];
-        for q in &self.inner.queue_set.borrow().queues {
-            queues.push(q.clone());
-        }
-        queues
+    // A "super" queue is a queue that can do all of the following:
+    //  - present
+    //  - compute
+    //  - graphics
+    //  - transfer
+    // In the real world, it looks like all hardware that matters
+    // has at least one of these.  Some appear to have no queues
+    // that support transfer; according to some guy on the Internet,
+    // those queues actually do support transfer.
+    // Some devices don't seem to report any queues that can present.
+    // I submit that those drivers are written by crack-addled doofuses.
+    // Nonetheless, I will support them by falling back to a queue that
+    // can at least do graphics and compute, assuming that it can also
+    // do transfer and presentation even if it says it can't.
+    pub fn get_super_queue_family(&self) -> QueueFamily {
+        self.inner.super_queue_family
     }
 
     pub fn get_window_size(&self) -> (usize, usize) {
@@ -510,13 +501,15 @@ impl Device {
     pub fn transfer_buffer<T: HasBuffer>(
         &self,
         buffer: T,
-        src: Rc<Queue>,
+        src: Queue,
         src_stage_flags: vk::PipelineStageFlags,
         src_access_mask: vk::AccessFlags,
-        dst: Rc<Queue>,
+        dst: Queue,
         dst_stage_flags: vk::PipelineStageFlags,
         dst_access_mask: vk::AccessFlags,
         deps: vk::DependencyFlags,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<()> {
         if src.family_idx == dst.family_idx {
             // No transfer needed!
@@ -524,10 +517,10 @@ impl Device {
         }
         let buf = buffer.get_buffer();
         let size = buffer.get_size();
-        let pool = self.get_default_transfer_pool();
-        command_buffer::CommandBuffer::run_oneshot_internal(
+        CommandBuffer::run_oneshot_internal(
             Rc::clone(&self.inner),
             pool,
+            queue,
             |writer| {
                 writer.pipeline_barrier(
                     src_stage_flags,
@@ -573,16 +566,6 @@ impl MemoryUsage {
     }
 }
 
-struct QueueSet {
-    queues: Vec<Rc<Queue>>,
-    pools: Vec<Rc<CommandPool>>,
-    // These three are indexes into the above vector ("queues").
-    default_graphics_queue_idx: usize,
-    default_present_queue_idx: usize,
-    default_transfer_queue_idx: usize,
-    default_compute_queue_idx: usize,
-}
-
 struct InnerDevice {
     window: winit::window::Window,
     _entry: ash::Entry,
@@ -598,7 +581,8 @@ struct InnerDevice {
     physical_device: vk::PhysicalDevice,
     _memory_properties: vk::PhysicalDeviceMemoryProperties,
     device: ash::Device,
-    queue_set: RefCell<QueueSet>,
+    queue_families: Vec<QueueFamily>,
+    super_queue_family: QueueFamily,
 }
 
 impl std::fmt::Debug for InnerDevice {
@@ -647,16 +631,52 @@ impl InnerDevice {
         let memory_properties = unsafe {
             instance.get_physical_device_memory_properties(physical_device)
         };
-        let queue_infos = get_queue_info(
+        let queue_families = get_queue_families(
             &instance,
             physical_device,
             surface,
             &surface_loader,
         )?;
+        let mut super_queue_family = None;
+        // This iterator is reversed, and we don't bail out once we find a suitable queue.
+        // Why?  Because we want the lowest-indexed queue family that matches, since that
+        // will be the best one in most real-world cases, based on what I've seen.
+        for qf in queue_families.iter().rev() {
+            if qf.can_do_graphics() && qf.can_do_compute() && qf.can_do_transfer() && qf.can_present() {
+                super_queue_family = Some(*qf);
+            }
+        }
+        if super_queue_family.is_none() {
+            // Maybe the driver is lying about not being able to do transfers.
+            for qf in queue_families.iter().rev() {
+                if qf.can_do_graphics() && qf.can_do_compute() && qf.can_present() {
+                    // The queue can do graphics, compute, and presentation.  Surely it
+                    // can also do transfers, right?
+                    super_queue_family = Some(*qf);
+                }
+            }
+
+            if super_queue_family.is_none() {
+                // Maybe the driver is lying about not being able to do transfers AND presentation.
+                for qf in queue_families.iter().rev() {
+                    if qf.can_do_graphics() && qf.can_do_compute() {
+                        // The queue can do graphics and compute.  Let's assume it can also
+                        // transfer and present and is just lying about its capabilities.
+                        super_queue_family = Some(*qf);
+                    }
+                }
+            }
+        }
+        if super_queue_family.is_none() {
+            // Screw you and your funky hardware.
+            // TODO: this may need to be handled differently if we want to support headless compute.
+            panic!("No super queue found.  What kind of hardware is this?");
+        }
+        let super_queue_family = super_queue_family.unwrap();
         let device = create_logical_device(
             &instance,
             physical_device,
-            &queue_infos,
+            &queue_families,
             builder.get_extensions(),
             builder.features_chain,
         );
@@ -668,7 +688,7 @@ impl InnerDevice {
             &device,
         )?);
 
-        let this = Rc::new(Self{
+        Ok(Rc::new(Self{
             window,
             _entry: entry,
             instance,
@@ -683,67 +703,9 @@ impl InnerDevice {
             physical_device,
             _memory_properties: memory_properties,
             device: device.clone(),
-            queue_set: RefCell::new(QueueSet {
-                queues: Vec::new(),
-                pools: Vec::new(),
-                default_graphics_queue_idx: 0,
-                default_present_queue_idx: 0,
-                default_transfer_queue_idx: 0,
-                default_compute_queue_idx: 0,
-            }),
-        });
-
-        {
-            let queues = get_queues_from_device(
-                this.clone(),
-                queue_infos,
-            )?;
-            let mut queue_set = this.queue_set.borrow_mut();
-
-            let mut maybe_graphics_queue_idx = None;
-            let mut maybe_present_queue_idx = None;
-            let mut maybe_transfer_queue_idx = None;
-            let mut maybe_compute_queue_idx = None;
-            for (idx, queue) in queues.iter().enumerate() {
-                if queue.can_do_graphics() {
-                    maybe_graphics_queue_idx = Some(idx)
-                }
-                if queue.can_present() {
-                    maybe_present_queue_idx = Some(idx)
-                }
-                if queue.can_do_transfer() {
-                    maybe_transfer_queue_idx = Some(idx)
-                }
-                if queue.can_do_compute() {
-                    maybe_compute_queue_idx = Some(idx)
-                }
-            }
-
-            let (default_graphics_queue_idx, default_present_queue_idx, default_transfer_queue_idx, default_compute_queue_idx) =
-                match (maybe_graphics_queue_idx, maybe_present_queue_idx, maybe_transfer_queue_idx, maybe_compute_queue_idx) {
-                    (Some(q1), Some(q2), Some(q3), Some(q4)) => (q1, q2, q3, q4),
-                    _ => panic!("Unable to create all four of: graphics queue, present queue, transfer, compute queue!"),
-                };
-
-            let mut pools = Vec::new();
-            for q in queues.iter() {
-                pools.push(CommandPool::from_inner(
-                    Rc::clone(&this),
-                    Rc::clone(q),
-                    false,
-                    false,
-                )?);
-            }
-
-            queue_set.queues = queues;
-            queue_set.pools = pools;
-            queue_set.default_graphics_queue_idx = default_graphics_queue_idx;
-            queue_set.default_present_queue_idx = default_present_queue_idx;
-            queue_set.default_transfer_queue_idx = default_transfer_queue_idx;
-            queue_set.default_compute_queue_idx = default_compute_queue_idx;
-        }
-
-        Ok(this)
+            queue_families,
+            super_queue_family,
+        }))
     }
 
     fn choose_swapchain_extent(
@@ -904,41 +866,6 @@ impl InnerDevice {
         Ok(())
     }
 
-    fn get_default_graphics_queue(&self) -> Rc<Queue> {
-        let queue_set = self.queue_set.borrow();
-        Rc::clone(&queue_set.queues[queue_set.default_graphics_queue_idx])
-    }
-
-    fn get_default_graphics_pool(&self) -> Rc<CommandPool> {
-        let queue_set = self.queue_set.borrow();
-        Rc::clone(&queue_set.pools[queue_set.default_graphics_queue_idx])
-    }
-
-    fn get_default_present_queue(&self) -> Rc<Queue> {
-        let queue_set = self.queue_set.borrow();
-        Rc::clone(&queue_set.queues[queue_set.default_present_queue_idx])
-    }
-
-    fn get_default_transfer_queue(&self) -> Rc<Queue> {
-        let queue_set = self.queue_set.borrow();
-        Rc::clone(&queue_set.queues[queue_set.default_transfer_queue_idx])
-    }
-
-    fn get_default_transfer_pool(&self) -> Rc<CommandPool> {
-        let queue_set = self.queue_set.borrow();
-        Rc::clone(&queue_set.pools[queue_set.default_transfer_queue_idx])
-    }
-
-    fn get_default_compute_queue(&self) -> Rc<Queue> {
-        let queue_set = self.queue_set.borrow();
-        Rc::clone(&queue_set.queues[queue_set.default_compute_queue_idx])
-    }
-
-    fn get_default_compute_pool(&self) -> Rc<CommandPool> {
-        let queue_set = self.queue_set.borrow();
-        Rc::clone(&queue_set.pools[queue_set.default_compute_queue_idx])
-    }
-
     fn query_swapchain_support(&self) -> Result<utils::SwapChainSupport> {
         utils::query_swapchain_support(
             self.physical_device,
@@ -993,7 +920,7 @@ impl InnerDevice {
 
     fn queue_present(
         &self,
-        queue: Rc<Queue>,
+        queue: &Queue,
         present_info: &vk::PresentInfoKHR
     ) -> ash::prelude::VkResult<bool> {
         unsafe {
@@ -1006,17 +933,6 @@ impl InnerDevice {
 impl Drop for InnerDevice {
     fn drop(&mut self) {
         unsafe {
-            if let Ok(mut queue_set) = self.queue_set.try_borrow_mut() {
-                for q in queue_set.queues.drain(..) {
-                    if Rc::strong_count(&q) > 1 {
-                        panic!("We are destroying a Device, but a queue is still in use!");
-                    }
-                }
-            } else {
-                panic!("We are destroying a Device, but its queue set is borrowed!");
-            }
-            // I don't think I have to destroy the allocator before the device; its
-            // Drop implementation only seems to log some debug info.
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
 
@@ -1032,7 +948,7 @@ impl Drop for InnerDevice {
 fn create_logical_device(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
-    queue_infos: &Vec<QueueInfo>,
+    queue_familes: &Vec<QueueFamily>,
     enabled_extensions: &[String],
     features_chain: *mut c_void,
 ) -> ash::Device {
@@ -1046,11 +962,12 @@ fn create_logical_device(
     // stuff going on in DeviceQueueCreateInfo below.
     let mut priority = 1.0_f32;
     let mut queue_priorities = vec![];
-    // This will fail horribly if the queue IDs are not consecutive.
-    // Since the Vulkan API assumes they are, I don't think there are
-    // any plausible cases where they won't be.
-    for queue_info in queue_infos.iter() {
-        for _ in queue_priorities.len()..queue_info.queues.len() {
+    // TODO: I hate this.  Queue priorities and probably also queue creation
+    // should be in the user's hands (albeit with a "do it for me" option
+    // that sets things up in a sensible manner).  I don't really have the
+    // time or the inclination to fix it right now, though.
+    for queue_family in queue_familes.iter() {
+        for _ in queue_priorities.len()..queue_family.num_queues as usize {
             queue_priorities.push(priority);
             priority = priority / 2_f32;
         }
@@ -1058,9 +975,9 @@ fn create_logical_device(
             s_type: vk::StructureType::DEVICE_QUEUE_CREATE_INFO,
             p_next: ptr::null(),
             flags: vk::DeviceQueueCreateFlags::empty(),
-            queue_family_index: queue_info.family_idx,
+            queue_family_index: queue_family.idx,
             p_queue_priorities: queue_priorities.as_ptr(),
-            queue_count: queue_info.queues.len() as u32,
+            queue_count: queue_family.num_queues,
         });
     }
 
@@ -1157,19 +1074,78 @@ fn create_logical_device(
     device
 }
 
-struct QueueInfo {
-    family_idx: u32,
+#[derive(Copy, Clone, Debug)]
+pub struct QueueFamilyRef {
+    idx: u32,
+}
+
+impl QueueFamilyRef {
+    pub fn matches(&self, queue: &Queue) -> bool {
+        self.idx == queue.family_idx
+    }
+}
+
+impl std::fmt::Display for QueueFamilyRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.idx.fmt(f)
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct QueueFamily {
+    idx: u32,
     flags: vk::QueueFlags,
-    queues: Vec<u32>,
+    num_queues: u32,
     can_present: bool,
 }
 
-fn get_queue_info(
+impl QueueFamily {
+    pub fn get_ref(&self) -> QueueFamilyRef {
+        QueueFamilyRef{
+            idx: self.idx,
+        }
+    }
+
+    pub fn get_queue(&self, device: &Device, index: u32) -> Result<Queue> {
+        if index >= self.num_queues {
+            return Err(Error::InvalidQueueIndex(index, self.idx));
+        }
+        Queue::new(
+            Rc::clone(&device.inner),
+            self.idx,
+            index,
+            self.flags,
+            self.can_present,
+        )
+    }
+
+    pub fn can_do_graphics(&self) -> bool {
+        self.flags.contains(vk::QueueFlags::GRAPHICS)
+    }
+
+    pub fn can_present(&self) -> bool {
+        self.can_present
+    }
+
+    pub fn can_do_compute(&self) -> bool {
+        self.flags.contains(vk::QueueFlags::COMPUTE)
+    }
+
+    pub fn can_do_transfer(&self) -> bool {
+        self.flags.contains(vk::QueueFlags::TRANSFER)
+    }
+
+    pub fn can_do_sparse_binding(&self) -> bool {
+        self.flags.contains(vk::QueueFlags::SPARSE_BINDING)
+    }
+}
+
+fn get_queue_families(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
     surface: vk::SurfaceKHR,
     surface_loader: &ash::extensions::khr::Surface,
-) -> Result<Vec<QueueInfo>> {
+) -> Result<Vec<QueueFamily>> {
     let queue_families = unsafe {
         instance.get_physical_device_queue_family_properties(physical_device)
     };
@@ -1181,10 +1157,10 @@ fn get_queue_info(
         for j in 0..queue_family.queue_count {
             queues.push(j as u32);
         }
-        infos.push(QueueInfo{
-            family_idx: i as u32,
+        infos.push(QueueFamily{
+            idx: i as u32,
             flags: queue_family.queue_flags,
-            queues: queues,
+            num_queues: queue_family.queue_count,
             can_present: unsafe {
                 Error::wrap_result(
                     surface_loader.get_physical_device_surface_support(
@@ -1199,31 +1175,6 @@ fn get_queue_info(
     }
 
     Ok(infos)
-}
-
-fn get_queues_from_device(
-    device: Rc<InnerDevice>,
-    queue_infos: Vec<QueueInfo>
-) -> Result<Vec<Rc<Queue>>> {
-    let mut queues = vec![];
-    for queue_info in queue_infos.iter() {
-        if queue_info.queues.len() == 0 {
-            error!("A queue family with no queues in it?  This driver is on crack!");
-            continue;
-        }
-
-        for queue_idx in queue_info.queues.iter() {
-            queues.push(Rc::new(Queue::new(
-                device.clone(),
-                queue_info.family_idx,
-                *queue_idx,
-                queue_info.flags,
-                queue_info.can_present,
-            )?));
-        }
-    }
-
-    Ok(queues)
 }
 
 pub trait NamedResource {

@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::ptr;
 use std::os::raw::c_void;
 
-use super::{Device, InnerDevice, Queue, FrameId};
+use super::{Device, InnerDevice, Queue, QueueFamilyRef, FrameId};
 use super::compute::ComputePipeline;
 use super::descriptor::DescriptorSet;
 use super::renderer::{Presenter, SwapchainImageRef, RenderPass, GraphicsPipeline, SubpassRef, RenderPassData};
@@ -104,20 +104,20 @@ impl super::HasHandle for SecondaryCommandBuffer {
 
 pub struct CommandPool {
     device: Rc<InnerDevice>,
-    queue: Rc<Queue>,
+    queue_family: QueueFamilyRef,
     command_pool: vk::CommandPool,
 }
 
 impl CommandPool {
     pub fn new(
         device: &Device,
-        queue: Rc<Queue>,
+        queue_family: QueueFamilyRef,
         can_reset: bool,
         transient_buffers: bool,
     ) -> Result<Rc<Self>> {
         Self::from_inner(
             Rc::clone(&device.inner),
-            queue,
+            queue_family,
             can_reset,
             transient_buffers,
         )
@@ -125,7 +125,7 @@ impl CommandPool {
 
     pub (crate) fn from_inner(
         device: Rc<InnerDevice>,
-        queue: Rc<Queue>,
+        queue_family: QueueFamilyRef,
         can_reset: bool,
         transient_buffers: bool,
     ) -> Result<Rc<Self>> {
@@ -142,7 +142,7 @@ impl CommandPool {
                 }
                 flags
             },
-            queue_family_index: queue.family_idx,
+            queue_family_index: queue_family.idx,
         };
 
         let command_pool = unsafe {
@@ -154,7 +154,7 @@ impl CommandPool {
 
         Ok(Rc::new(Self{
             device,
-            queue,
+            queue_family,
             command_pool,
         }))
     }
@@ -177,6 +177,7 @@ pub struct CommandBuffer {
     // the command buffer has been destroyed.
     dependencies: Vec<Rc<dyn Any>>,
     name: String,
+    queue_family: QueueFamilyRef,
 }
 
 impl CommandBuffer {
@@ -210,6 +211,8 @@ impl CommandBuffer {
             )?
         }[0];
 
+        let queue_family = pool.queue_family;
+
         Ok(Self{
             device,
             pool,
@@ -217,6 +220,7 @@ impl CommandBuffer {
             buf: command_buffer,
             dependencies: Vec::new(),
             name: String::from(name),
+            queue_family,
         })
     }
 
@@ -276,12 +280,17 @@ impl CommandBuffer {
 
     pub fn submit_synced(
         &self,
+        queue: &Queue,
         wait: &[(vk::PipelineStageFlags, Rc<Semaphore>)],
         signal_semaphores: &[Rc<Semaphore>],
         signal_fence: Option<Rc<Fence>>,
     ) -> Result<()> {
         if self.level == vk::CommandBufferLevel::SECONDARY {
-            panic!("Tried to manually submit a secondary command buffer!");
+            return Err(Error::SubmittedSecondaryCommandBuffer);
+        }
+
+        if !self.queue_family.matches(queue) {
+            return Err(Error::QueueFamilyMismatch(queue.get_family(), self.queue_family));
         }
 
         let mut wait_stages = Vec::new();
@@ -323,7 +332,7 @@ impl CommandBuffer {
             Error::wrap_result(
                 self.device.device
                     .queue_submit(
-                        self.pool.queue.get(),
+                        queue.get(),
                         &submit_infos,
                         wait_fence,
                     ),
@@ -346,6 +355,7 @@ impl CommandBuffer {
 
     pub fn submit_and_wait(
         &self,
+        queue: &Queue,
     ) -> Result<()> {
         if self.level == vk::CommandBufferLevel::SECONDARY {
             panic!("Tried to manually submit a secondary command buffer!");
@@ -355,6 +365,7 @@ impl CommandBuffer {
         let fence = Rc::new(Fence::new_internal(&self.device, fence_name, false)?);
 
         self.submit_synced(
+            queue,
             &[],
             &[],
             Some(Rc::clone(&fence)),
@@ -367,17 +378,19 @@ impl CommandBuffer {
     pub fn run_oneshot<T>(
         device: &Device,
         pool: Rc<CommandPool>,
+        queue: &Queue,
         cmd_fn: T,
     ) -> Result<()>
     where
         T: FnMut(&mut BufferWriter) -> Result<()>
     {
-        CommandBuffer::run_oneshot_internal(device.inner.clone(), pool, cmd_fn)
+        CommandBuffer::run_oneshot_internal(device.inner.clone(), pool, queue, cmd_fn)
     }
 
     pub (crate) fn run_oneshot_internal<T>(
         device: Rc<InnerDevice>,
         pool: Rc<CommandPool>,
+        queue: &Queue,
         cmd_fn: T,
     ) -> Result<()>
     where
@@ -390,7 +403,7 @@ impl CommandBuffer {
             "temporary-oneshot-command-buffer",
         )?;
         cmd_buf.record(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT, cmd_fn)?;
-        cmd_buf.submit_and_wait()?;
+        cmd_buf.submit_and_wait(queue)?;
         Ok(())
     }
 }
@@ -546,10 +559,10 @@ impl BufferWriter {
     pub fn transfer_buffer_ownership<T: HasBuffer>(
         &mut self,
         buffer: &T,
-        src: Rc<Queue>,
+        src: &Queue,
         src_stage_flags: vk::PipelineStageFlags,
         src_access_mask: vk::AccessFlags,
-        dst: Rc<Queue>,
+        dst: &Queue,
         dst_stage_flags: vk::PipelineStageFlags,
         dst_access_mask: vk::AccessFlags,
         deps: vk::DependencyFlags,
@@ -882,18 +895,18 @@ impl Drop for BufferWriter {
 
 pub struct BufferTransferRequest {
     buffer: Rc<dyn HasBuffer>,
-    src: Rc<Queue>,
+    src: Queue,
     src_access_mask: vk::AccessFlags,
-    dst: Rc<Queue>,
+    dst: Queue,
     dst_access_mask: vk::AccessFlags,
 }
 
 impl BufferTransferRequest {
     pub fn new(
         buffer: Rc<dyn HasBuffer>,
-        src: Rc<Queue>,
+        src: Queue,
         src_access_mask: vk::AccessFlags,
-        dst: Rc<Queue>,
+        dst: Queue,
         dst_access_mask: vk::AccessFlags,
     ) -> Self {
         Self{

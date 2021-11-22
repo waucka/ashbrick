@@ -9,13 +9,13 @@ use std::ptr;
 use std::os::raw::c_void;
 use std::pin::Pin;
 
-use super::{Device, InnerDevice, Queue, FrameId, PerFrameSet};
+use super::{Device, InnerDevice, Queue, QueueFamilyRef, FrameId, PerFrameSet};
 use super::image::{Image, ImageView, ImageBuilder};
 use super::texture::Texture;
 use super::sync::{Semaphore, Fence};
 use super::shader::{VertexShader, FragmentShader, Vertex, GenericShader};
 use super::descriptor::DescriptorSetLayout;
-use super::command_buffer::CommandBuffer;
+use super::command_buffer::{CommandBuffer, CommandPool};
 
 use super::errors::{Error, Result};
 
@@ -42,15 +42,24 @@ pub struct Presenter {
     desired_fps: u32,
     current_frame: FrameId,
 
-    present_queue: Rc<Queue>,
+    graphics_queue_family: QueueFamilyRef,
+    present_queue: Queue,
 }
 
 impl Presenter {
+    // Make sure that graphics_queue_family is the queue family you
+    // will be using to draw to swapchain images.
     pub fn new(
         device: &Device,
         desired_fps: u32,
+        graphics_queue_family: QueueFamilyRef,
+        present_queue: &Queue,
     ) -> Result<Self> {
-        let swapchain = Swapchain::new(device.inner.clone())?;
+        let swapchain = Swapchain::new(
+            device.inner.clone(),
+            graphics_queue_family,
+            present_queue,
+        )?;
 
 
         let image_available_semaphores = PerFrameSet::new(
@@ -83,7 +92,8 @@ impl Presenter {
             desired_fps,
             current_frame: FrameId::initial(),
 
-            present_queue: device.inner.get_default_present_queue(),
+            graphics_queue_family,
+            present_queue: *present_queue,
         })
     }
 
@@ -160,6 +170,8 @@ impl Presenter {
         self.swapchain = None;
         self.swapchain = Some(Swapchain::new(
             self.device.clone(),
+            self.graphics_queue_family,
+            &self.present_queue,
         )?);
 
         Ok(())
@@ -242,6 +254,7 @@ impl Presenter {
             for submission in &submission_set.submissions {
                 let CommandBufferSubmission{
                     command_buffer,
+                    queue,
                     wait,
                     signal,
                     fence,
@@ -259,6 +272,7 @@ impl Presenter {
                     None => None,
                 };
                 results.push(command_buffer.submit_synced(
+                    queue,
                     &wait_list,
                     &signal_list,
                     fence,
@@ -285,7 +299,7 @@ impl Presenter {
             self.wait_for_next_frame();
         }
 
-        let presentation_result = match self.device.queue_present(Rc::clone(&self.present_queue), &present_info){
+        let presentation_result = match self.device.queue_present(&self.present_queue, &present_info) {
             Ok(_) => Ok(()),
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) |
             Err(vk::Result::SUBOPTIMAL_KHR) => Err(Error::NeedResize),
@@ -325,6 +339,7 @@ impl CommandBufferWaitSpec {
 #[derive(Clone)]
 pub struct CommandBufferSubmission {
     command_buffer: Rc<CommandBuffer>,
+    queue: Queue,
     wait: Vec<CommandBufferWaitSpec>,
     signal: Vec<Rc<Semaphore>>,
     fence: Option<Rc<Fence>>,
@@ -333,10 +348,12 @@ pub struct CommandBufferSubmission {
 impl CommandBufferSubmission {
     pub fn new(
         command_buffer: Rc<CommandBuffer>,
+        queue: Queue,
         fence: Option<Rc<Fence>>,
     ) -> Self {
         Self{
             command_buffer,
+            queue,
             wait: Vec::new(),
             signal: Vec::new(),
             fence,
@@ -442,6 +459,8 @@ struct Swapchain {
 impl Swapchain {
     fn new(
         device: Rc<InnerDevice>,
+        graphics_queue_family: QueueFamilyRef,
+        present_queue: &Queue,
     ) -> Result<Self> {
         let swapchain_support = device.query_swapchain_support()?;
 
@@ -460,12 +479,12 @@ impl Swapchain {
         trace!("Creating {} swapchain images...", image_count);
 
         let (image_sharing_mode, queue_family_indices) =
-            if device.get_default_graphics_queue() != device.get_default_present_queue() {
+            if graphics_queue_family.idx != present_queue.family_idx {
                 (
                     vk::SharingMode::CONCURRENT,
                     vec![
-                        device.get_default_graphics_queue().family_idx,
-                        device.get_default_present_queue().family_idx,
+                        graphics_queue_family.idx,
+                        present_queue.family_idx,
                     ],
                 )
             } else {
@@ -1540,12 +1559,16 @@ impl RenderPass {
         &self,
         width: u32,
         height: u32,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Framebuffer> {
         Framebuffer::for_renderpass(
             self,
             width,
             height,
             self.msaa_samples,
+            pool,
+            queue,
         )
     }
 
@@ -1596,6 +1619,8 @@ impl Framebuffer {
         width: u32,
         height: u32,
         msaa_samples: vk::SampleCountFlags,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Self> {
         let attachment_image_infos = render_pass.get_attachment_infos(width, height);
         let attachments_info = vk::FramebufferAttachmentsCreateInfo{
@@ -1631,6 +1656,8 @@ impl Framebuffer {
                 width,
                 height,
                 msaa_samples,
+                pool,
+                queue,
             )?,
         })
     }
@@ -1654,6 +1681,8 @@ impl Framebuffer {
         width: u32,
         height: u32,
         msaa_samples: vk::SampleCountFlags,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<Vec<PerFrameSet<Rc<Texture>>>> {
         info!("Generating new attachment textures for a {}x{} viewport", width, height);
         let mut textures = Vec::new();
@@ -1663,6 +1692,7 @@ impl Framebuffer {
             let texture_name = format!("attachment-image-{}", idx);
             textures.push(PerFrameSet::new(
                 |_| {
+                    let pool = Rc::clone(&pool);
                     Ok(Rc::new(
                         Texture::from_image_builder_internal(
                             render_pass.device.clone(),
@@ -1674,6 +1704,8 @@ impl Framebuffer {
                                 .with_format(att.format)
                                 .with_usage(att.usage),
                             &texture_name,
+                            pool,
+                            queue,
                         )?
                     ))
                 }
@@ -1688,12 +1720,16 @@ impl Framebuffer {
         width: usize,
         height: usize,
         msaa_samples: vk::SampleCountFlags,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
     ) -> Result<()> {
         self.attachments = Self::create_attachment_textures(
             render_pass,
             width as u32,
             height as u32,
             msaa_samples,
+            pool,
+            queue,
         )?;
         Ok(())
     }
@@ -1723,8 +1759,8 @@ impl RenderPassData {
         }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
-        let new_framebuffer = self.render_pass.create_framebuffer(width, height)?;
+    pub fn resize(&mut self, width: u32, height: u32, pool: Rc<CommandPool>, queue: &Queue) -> Result<()> {
+        let new_framebuffer = self.render_pass.create_framebuffer(width, height, pool, queue)?;
         self.framebuffer = new_framebuffer;
         Ok(())
     }
