@@ -574,6 +574,33 @@ impl MemoryUsage {
     }
 }
 
+// This will just be our little secret, OK?
+struct AllocatorHolder {
+    allocator: Option<gpu_allocator::vulkan::Allocator>,
+}
+
+impl AllocatorHolder {
+    // This will be the extra-secret part, OK?
+    fn destroy(&mut self) {
+        self.allocator = None;
+    }
+
+    fn allocate(
+        &mut self,
+        desc: &gpu_allocator::vulkan::AllocationCreateDesc<'_>
+    ) -> gpu_allocator::Result<gpu_allocator::vulkan::Allocation> {
+        self.allocator.as_mut().unwrap().allocate(desc)
+    }
+
+    fn free(&mut self, allocation: gpu_allocator::vulkan::Allocation) -> gpu_allocator::Result<()> {
+        self.allocator.as_mut().unwrap().free(allocation)
+    }
+
+    fn report_memory_leaks(&self, log_level: log::Level) {
+        self.allocator.as_ref().unwrap().report_memory_leaks(log_level);
+    }
+}
+
 struct InnerDevice {
     window: winit::window::Window,
     _entry: ash::Entry,
@@ -584,7 +611,7 @@ struct InnerDevice {
     debug_utils_loader: ash::extensions::ext::DebugUtils,
     debug_messenger: vk::DebugUtilsMessengerEXT,
     validation_enabled: bool,
-    allocator: RefCell<gpu_allocator::vulkan::Allocator>,
+    allocator: RefCell<AllocatorHolder>,
 
     physical_device: vk::PhysicalDevice,
     _memory_properties: vk::PhysicalDeviceMemoryProperties,
@@ -690,11 +717,13 @@ impl InnerDevice {
         );
         let swapchain_loader = ash::extensions::khr::Swapchain::new(&instance, &device);
 
-        let allocator = RefCell::new(utils::create_allocator(
-            &instance,
-            &physical_device,
-            &device,
-        )?);
+        let allocator = RefCell::new(AllocatorHolder{
+            allocator: Some(utils::create_allocator(
+                &instance,
+                &physical_device,
+                &device,
+            )?),
+        });
 
         Ok(Rc::new(Self{
             window,
@@ -942,6 +971,8 @@ impl InnerDevice {
 
 impl Drop for InnerDevice {
     fn drop(&mut self) {
+        self.allocator.borrow().report_memory_leaks(log::Level::Trace);
+        self.allocator.borrow_mut().destroy();
         unsafe {
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
