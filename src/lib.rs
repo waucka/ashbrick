@@ -7,6 +7,7 @@
 
 use ash::vk;
 use winit::event_loop::EventLoop;
+use log::trace;
 
 pub use ash;
 pub use winit;
@@ -774,6 +775,7 @@ impl InnerDevice {
                 return Err(Error::AllocationError(e));
             },
         };
+        trace!("Allocated memory {:?} for {}", unsafe { allocation.memory() }, name);
         unsafe {
             let res = self.device.bind_buffer_memory(buffer, allocation.memory(), allocation.offset());
             match res {
