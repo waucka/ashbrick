@@ -799,6 +799,7 @@ impl InnerDevice {
         buffer: vk::Buffer,
         allocation: gpu_allocator::vulkan::Allocation,
     ) -> Result<()> {
+        trace!("Freeing memory {:?} for {:?}", unsafe { allocation.memory() }, allocation);
         match self.allocator.borrow_mut().free(allocation) {
             Ok(_) => (),
             Err(e) => return Err(Error::AllocationError(e)),
