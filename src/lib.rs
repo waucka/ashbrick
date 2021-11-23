@@ -575,6 +575,17 @@ impl MemoryUsage {
 }
 
 // This will just be our little secret, OK?
+// OK, fine.  I'll explain.  If I just put the allocator in
+// the InnerDevice, it won't get dropped until after the
+// InnerDevice's drop() function completes.  What does that
+// drop() function do?  Destroys the device.  What does the
+// device not like?  Getting destroyed while memory is still
+// allocated.  What isn't guaranteed until the allocator is
+// dropped?  All allocated memory getting freed.
+//
+// So, this seemingly pointless structure exists for the sole
+// purpose of enabling us to drop the allocator (thus freeing
+// all allocated memory) before destroying the device.
 struct AllocatorHolder {
     allocator: Option<gpu_allocator::vulkan::Allocator>,
 }
