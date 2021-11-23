@@ -775,7 +775,7 @@ impl InnerDevice {
                 return Err(Error::AllocationError(e));
             },
         };
-        trace!("Allocated memory {:?} for {}", unsafe { allocation.memory() }, name);
+        trace!("Allocated memory {:?}", allocation);
         unsafe {
             let res = self.device.bind_buffer_memory(buffer, allocation.memory(), allocation.offset());
             match res {
@@ -799,7 +799,7 @@ impl InnerDevice {
         buffer: vk::Buffer,
         allocation: gpu_allocator::vulkan::Allocation,
     ) -> Result<()> {
-        trace!("Freeing memory {:?} for {:?}", unsafe { allocation.memory() }, allocation);
+        trace!("Freeing memory {:?}", allocation);
         match self.allocator.borrow_mut().free(allocation) {
             Ok(_) => (),
             Err(e) => return Err(Error::AllocationError(e)),
