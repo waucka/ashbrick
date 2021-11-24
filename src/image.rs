@@ -436,6 +436,10 @@ impl Image {
                 Ok(())
             })
     }
+
+    pub fn get_layout(&self) -> vk::ImageLayout {
+        self.layout
+    }
 }
 
 impl Drop for Image {
