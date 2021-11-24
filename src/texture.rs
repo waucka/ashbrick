@@ -337,6 +337,14 @@ impl Texture {
         })
     }
 
+    pub fn get_image(&self) -> Rc<Image> {
+        Rc::clone(&self.image)
+    }
+
+    pub fn get_image_view(&self) -> Rc<ImageView> {
+        Rc::clone(&self.image_view)
+    }
+
     pub fn get_image_debug_str(&self) -> String {
         format!("{:?}", self.image.img)
     }
