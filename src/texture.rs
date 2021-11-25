@@ -596,7 +596,9 @@ impl Sampler {
         min_filter: vk::Filter,
         mag_filter: vk::Filter,
         mipmap_mode: vk::SamplerMipmapMode,
-        address_mode: vk::SamplerAddressMode,
+        address_mode_u: vk::SamplerAddressMode,
+        address_mode_v: vk::SamplerAddressMode,
+        address_mode_w: vk::SamplerAddressMode,
         max_anisotropy: u32,
     ) -> Result<Self> {
         let sampler_create_info = vk::SamplerCreateInfo{
@@ -606,9 +608,9 @@ impl Sampler {
             min_filter,
             mag_filter,
             mipmap_mode,
-            address_mode_u: address_mode,
-            address_mode_v: address_mode,
-            address_mode_w: address_mode,
+            address_mode_u,
+            address_mode_v,
+            address_mode_w,
             mip_lod_bias: 0.0,
             anisotropy_enable: if max_anisotropy > 0 {
                 vk::TRUE
