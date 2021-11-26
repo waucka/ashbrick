@@ -1694,8 +1694,8 @@ impl Framebuffer {
                     let image = Image::new_internal(
                         Rc::clone(&render_pass.device),
                         ImageBuilder::new2d(&texture_name, width as usize, height as usize)
-                                .with_num_samples(msaa_samples)
-                                .with_format(att.format)
+                            .with_num_samples(msaa_samples)
+                            .with_format(att.format)
                             .with_usage(att.usage),
                     )?;
                     let image_view = ImageView::from_image(

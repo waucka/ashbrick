@@ -1077,6 +1077,66 @@ impl RenderPassWriter {
             );
         }
     }
+
+    /// Write a command that binds a graphics pipeline
+    pub fn bind_graphics_pipeline<V: Vertex + 'static>(
+        &mut self,
+        pipeline: Rc<GraphicsPipeline<V>>,
+    ) {
+        unsafe {
+            self.device.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.get_vk(),
+            );
+        }
+        self.dependencies.push(pipeline);
+    }
+
+    /// Write a command that binds graphics descriptor sets
+    /// - `pipeline_layout`: The layout of the pipeline to bind the sets to
+    /// - `descriptor_sets`: The descriptor sets to bind
+    /// - `first_set`: The index of the first set to bind (useful for avoiding redundant binding)
+    pub fn bind_graphics_descriptor_sets(
+        &mut self,
+        pipeline_layout: vk::PipelineLayout,
+        descriptor_sets: &[Rc<DescriptorSet>],
+        first_set: u32,
+    ) {
+        self.bind_descriptor_sets(
+            pipeline_layout,
+            descriptor_sets,
+            first_set,
+            vk::PipelineBindPoint::GRAPHICS,
+        );
+    }
+
+    fn bind_descriptor_sets(
+        &mut self,
+        pipeline_layout: vk::PipelineLayout,
+        descriptor_sets: &[Rc<DescriptorSet>],
+        first_set: u32,
+        bind_point: vk::PipelineBindPoint,
+    ) {
+        let mut vk_sets = Vec::new();
+        for set in descriptor_sets {
+            vk_sets.push(set.inner);
+            // This turbofish horseshit is needed because otherwise, the compiler will
+            // infer the type parameter to be `dyn Drop`, and Rc::clone() will barf because
+            // its parameter is Rc<DescriptorSet> rather than Rc<dyn Drop>.
+            self.dependencies.push(Rc::<DescriptorSet>::clone(set));
+        }
+        unsafe {
+            self.device.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                bind_point,
+                pipeline_layout,
+                first_set,
+                &vk_sets,
+                &[],
+            );
+        }
+    }
 }
 
 impl Drop for RenderPassWriter {
