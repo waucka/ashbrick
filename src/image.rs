@@ -23,6 +23,7 @@ pub struct ImageBuilder {
     mip_levels: u32,
     num_samples: vk::SampleCountFlags,
     format: vk::Format,
+    layout: vk::ImageLayout,
     tiling: vk::ImageTiling,
     usage: vk::ImageUsageFlags,
     required_memory_properties: vk::MemoryPropertyFlags,
@@ -50,6 +51,7 @@ impl ImageBuilder {
             mip_levels: 1,
             num_samples: vk::SampleCountFlags::TYPE_1,
             format: vk::Format::R8G8B8A8_UNORM,
+            layout: vk::ImageLayout::UNDEFINED,
             tiling: vk::ImageTiling::OPTIMAL,
             usage: vk::ImageUsageFlags::TRANSFER_DST,
             required_memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -60,6 +62,7 @@ impl ImageBuilder {
     impl_defaulted_setter!(with_mip_levels, mip_levels, u32);
     impl_defaulted_setter!(with_num_samples, num_samples, vk::SampleCountFlags);
     impl_defaulted_setter!(with_format, format, vk::Format);
+    impl_defaulted_setter!(with_layout, layout, vk::ImageLayout);
     impl_defaulted_setter!(with_tiling, tiling, vk::ImageTiling);
     impl_defaulted_setter!(with_usage, usage, vk::ImageUsageFlags);
     impl_defaulted_setter!(with_required_memory_properties, required_memory_properties, vk::MemoryPropertyFlags);
@@ -147,9 +150,11 @@ impl Image {
             sharing_mode: builder.sharing_mode,
             queue_family_index_count: 0,
             p_queue_family_indices: ptr::null(),
-            initial_layout: vk::ImageLayout::UNDEFINED,
+            initial_layout: builder.layout,
         };
 
+        // TODO: do something so that the memory doesn't have to be GpuOnly.
+        //       This is especially important for things like UI and video.
         let (texture_image, allocation) =
              device.create_image(&builder.name, MemoryUsage::GpuOnly, &image_create_info)?;
 

@@ -20,7 +20,7 @@ use super::texture::Texture;
 use super::sync::{Semaphore, Fence};
 use super::shader::{VertexShader, FragmentShader, Vertex, GenericShader};
 use super::descriptor::DescriptorSetLayout;
-use super::command_buffer::{CommandBuffer, CommandPool};
+use super::command_buffer::CommandBuffer;
 
 use super::errors::{Error, Result};
 
@@ -1568,16 +1568,12 @@ impl RenderPass {
         &self,
         width: u32,
         height: u32,
-        pool: Rc<CommandPool>,
-        queue: &Queue,
     ) -> Result<Framebuffer> {
         Framebuffer::for_renderpass(
             self,
             width,
             height,
             self.msaa_samples,
-            pool,
-            queue,
         )
     }
 
@@ -1628,8 +1624,6 @@ impl Framebuffer {
         width: u32,
         height: u32,
         msaa_samples: vk::SampleCountFlags,
-        pool: Rc<CommandPool>,
-        queue: &Queue,
     ) -> Result<Self> {
         let attachment_image_infos = render_pass.get_attachment_infos(width, height);
         let attachments_info = vk::FramebufferAttachmentsCreateInfo{
@@ -1665,8 +1659,6 @@ impl Framebuffer {
                 width,
                 height,
                 msaa_samples,
-                pool,
-                queue,
             )?,
         })
     }
@@ -1690,8 +1682,6 @@ impl Framebuffer {
         width: u32,
         height: u32,
         msaa_samples: vk::SampleCountFlags,
-        pool: Rc<CommandPool>,
-        queue: &Queue,
     ) -> Result<Vec<PerFrameSet<Rc<Texture>>>> {
         info!("Generating new attachment textures for a {}x{} viewport", width, height);
         let mut textures = Vec::new();
@@ -1701,20 +1691,24 @@ impl Framebuffer {
             let texture_name = format!("attachment-image-{}", idx);
             textures.push(PerFrameSet::new(
                 |_| {
-                    let pool = Rc::clone(&pool);
-                    Ok(Rc::new(
-                        Texture::from_image_builder_internal(
-                            render_pass.device.clone(),
-                            att.aspect,
-                            1,
-                            att.initial_layout,
-                            ImageBuilder::new2d(&texture_name, width as usize, height as usize)
+                    let image = Image::new_internal(
+                        Rc::clone(&render_pass.device),
+                        ImageBuilder::new2d(&texture_name, width as usize, height as usize)
                                 .with_num_samples(msaa_samples)
                                 .with_format(att.format)
-                                .with_usage(att.usage),
+                            .with_usage(att.usage),
+                    )?;
+                    let image_view = ImageView::from_image(
+                        &image,
+                        att.aspect,
+                        1,
+                    )?;
+                    Ok(Rc::new(
+                        Texture::from_image(
+                            Rc::new(image),
+                            Rc::new(image_view),
+                            1,
                             &texture_name,
-                            pool,
-                            queue,
                         )?
                     ))
                 }
@@ -1729,16 +1723,12 @@ impl Framebuffer {
         width: usize,
         height: usize,
         msaa_samples: vk::SampleCountFlags,
-        pool: Rc<CommandPool>,
-        queue: &Queue,
     ) -> Result<()> {
         self.attachments = Self::create_attachment_textures(
             render_pass,
             width as u32,
             height as u32,
             msaa_samples,
-            pool,
-            queue,
         )?;
         Ok(())
     }
@@ -1768,8 +1758,8 @@ impl RenderPassData {
         }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32, pool: Rc<CommandPool>, queue: &Queue) -> Result<()> {
-        let new_framebuffer = self.render_pass.create_framebuffer(width, height, pool, queue)?;
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
+        let new_framebuffer = self.render_pass.create_framebuffer(width, height)?;
         self.framebuffer = new_framebuffer;
         Ok(())
     }

@@ -289,46 +289,12 @@ impl Texture {
         })
     }
 
-    pub fn from_image_builder(
-        device: &Device,
-        aspect: vk::ImageAspectFlags,
+    pub fn from_image(
+        image: Rc<Image>,
+        image_view: Rc<ImageView>,
         mip_levels: u32,
-        desired_layout: vk::ImageLayout,
-        builder: ImageBuilder,
         name: &str,
-        pool: Rc<CommandPool>,
-        queue: &Queue,
     ) -> Result<Self> {
-        Self::from_image_builder_internal(
-            device.inner.clone(),
-            aspect,
-            mip_levels,
-            desired_layout,
-            builder,
-            name,
-            pool,
-            queue,
-        )
-    }
-
-    pub (crate) fn from_image_builder_internal(
-        device: Rc<InnerDevice>,
-        aspect: vk::ImageAspectFlags,
-        mip_levels: u32,
-        desired_layout: vk::ImageLayout,
-        builder: ImageBuilder,
-        name: &str,
-        pool: Rc<CommandPool>,
-        queue: &Queue,
-    ) -> Result<Self> {
-        let mut image = Image::new_internal(device, builder)?;
-        image.transition_layout(vk::ImageLayout::UNDEFINED, desired_layout, mip_levels, pool, queue)?;
-        let image_view = Rc::new(ImageView::from_image(
-            &image,
-            aspect,
-            mip_levels,
-        )?);
-        let image = Rc::new(image);
         Ok(Self{
             image,
             image_view,
@@ -364,7 +330,7 @@ impl Texture {
             Err(e) => return Err(Error::external(e, &format!("Failed to load image from {} bytes", bytes.len()))),
         };
         trace!("Loaded {} bytes in {}ms", bytes.len(), start.elapsed().as_millis());
-        Self::from_image(device, name, &image_object, srgb, mipmapped, pool, queue)
+        Self::from_dynamic_image(device, name, &image_object, srgb, mipmapped, pool, queue)
     }
 
     pub fn from_file(
@@ -382,10 +348,10 @@ impl Texture {
             Err(e) => return Err(Error::external(e, &format!("Failed to load image {}", image_path.display()))),
         };
         trace!("Loaded {} in {}ms", image_path.display(), start.elapsed().as_millis());
-        Self::from_image(device, name, &image_object, srgb, mipmapped, pool, queue)
+        Self::from_dynamic_image(device, name, &image_object, srgb, mipmapped, pool, queue)
     }
 
-    pub fn from_image(
+    pub fn from_dynamic_image(
         device: &Device,
         name: &str,
         image_object: &image::DynamicImage,
@@ -399,21 +365,21 @@ impl Texture {
         match image_object {
             ImageRgb8(img) => {
                 let image_object = ImageRgba8(img.convert());
-                Self::from_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
+                Self::from_dynamic_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
             },
             ImageRgb16(img) => {
                 let image_object = ImageRgba16(img.convert());
-                Self::from_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
+                Self::from_dynamic_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
             },
             ImageBgr8(img) => {
                 let image_object = ImageRgba8(img.convert());
-                Self::from_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
+                Self::from_dynamic_image_internal(device, name, &image_object, srgb, mipmapped, pool, queue)
             },
-            image_object => Self::from_image_internal(device, name, image_object, srgb, mipmapped, pool, queue),
+            image_object => Self::from_dynamic_image_internal(device, name, image_object, srgb, mipmapped, pool, queue),
         }
     }
 
-    fn from_image_internal(
+    fn from_dynamic_image_internal(
         device: &Device,
         name: &str,
         image_object: &image::DynamicImage,
