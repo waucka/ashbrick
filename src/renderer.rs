@@ -1619,12 +1619,11 @@ pub struct Framebuffer {
 }
 
 impl Framebuffer {
-    fn for_renderpass(
+    fn create(
         render_pass: &RenderPass,
         width: u32,
         height: u32,
-        msaa_samples: vk::SampleCountFlags,
-    ) -> Result<Self> {
+    ) -> Result<vk::Framebuffer> {
         let attachment_image_infos = render_pass.get_attachment_infos(width, height);
         let attachments_info = vk::FramebufferAttachmentsCreateInfo{
             s_type: vk::StructureType::FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
@@ -1645,15 +1644,26 @@ impl Framebuffer {
             layers: 1,
         };
 
+        unsafe {
+            Error::wrap_result(
+                render_pass.device.device
+                    .create_framebuffer(&framebuffer_create_info, None),
+                "Failed to create framebuffer",
+            )
+        }
+    }
+
+    fn for_renderpass(
+        render_pass: &RenderPass,
+        width: u32,
+        height: u32,
+        msaa_samples: vk::SampleCountFlags,
+    ) -> Result<Self> {
+        let framebuffer = Self::create(render_pass, width, height)?;
+
         Ok(Self{
             device: Rc::clone(&render_pass.device),
-            framebuffer: unsafe {
-                Error::wrap_result(
-                    render_pass.device.device
-                        .create_framebuffer(&framebuffer_create_info, None),
-                    "Failed to create framebuffer",
-                )?
-            },
+            framebuffer,
             attachments: Self::create_attachment_textures(
                 render_pass,
                 width,
@@ -1666,7 +1676,7 @@ impl Framebuffer {
     pub fn get_attachment(&self, frame: FrameId, att_ref: &AttachmentRef) -> Rc<Texture> {
         // We subtract one from the index because the index is based on the first attachment
         // being the swapchain attachment.
-        self.attachments[att_ref.idx - 1].get(frame).clone()
+        Rc::clone(&self.attachments[att_ref.idx - 1].get(frame))
     }
 
     pub (crate) fn get_image_views(&self, frame: FrameId) -> Vec<vk::ImageView> {
@@ -1715,22 +1725,6 @@ impl Framebuffer {
             )?);
         }
         Ok(textures)
-    }
-
-    pub fn resize(
-        &mut self,
-        render_pass: &RenderPass,
-        width: usize,
-        height: usize,
-        msaa_samples: vk::SampleCountFlags,
-    ) -> Result<()> {
-        self.attachments = Self::create_attachment_textures(
-            render_pass,
-            width as u32,
-            height as u32,
-            msaa_samples,
-        )?;
-        Ok(())
     }
 }
 
