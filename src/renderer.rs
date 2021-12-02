@@ -235,7 +235,8 @@ impl Presenter {
         Ok(())
     }
 
-    // Returns submission results for each submitted framebuffer.
+    /// Submits command buffers and presents swapchain image.
+    /// Returns submission results for each submitted framebuffer.
     pub fn present(&mut self, frame: Frame) -> Result<SubmissionResults> {
         let Frame{
             submission_set,
@@ -249,10 +250,6 @@ impl Presenter {
 
         let mut results = Vec::new();
         if let Some(submission_set) = &submission_set {
-            // Wait for whatever the user wants us to wait for (probably command buffers)
-            submission_set.render_finished_fence.wait(u64::MAX)?;
-            submission_set.render_finished_fence.reset()?;
-
             // Release old resources for this swapchain image
             self.submissions[swapchain_image.idx as usize] = None;
 
@@ -391,17 +388,14 @@ impl CommandBufferSubmission {
 #[derive(Clone)]
 pub struct CommandBufferSubmissionSet {
     submissions: Vec<CommandBufferSubmission>,
-    render_finished_fence: Rc<Fence>,
 }
 
 impl CommandBufferSubmissionSet {
     pub fn new(
         submissions: Vec<CommandBufferSubmission>,
-        render_finished_fence: Rc<Fence>,
     ) -> Self {
         Self{
             submissions,
-            render_finished_fence,
         }
     }
 }
