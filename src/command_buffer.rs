@@ -407,6 +407,19 @@ impl CommandBuffer {
         CommandBuffer::run_oneshot_internal(device.inner.clone(), pool, queue, cmd_fn)
     }
 
+    /// Create a command buffer, submit it, and return it along with its fence
+    pub fn start_oneshot<T>(
+        device: &Device,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+        cmd_fn: T,
+    ) -> Result<(Rc<CommandBuffer>, Rc<Fence>)>
+    where
+        T: FnMut(&mut BufferWriter) -> Result<()>
+    {
+        CommandBuffer::start_oneshot_internal(Rc::clone(&device.inner), pool, queue, cmd_fn)
+    }
+
     pub (crate) fn run_oneshot_internal<T>(
         device: Rc<InnerDevice>,
         pool: Rc<CommandPool>,
@@ -425,6 +438,36 @@ impl CommandBuffer {
         cmd_buf.record(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT, cmd_fn)?;
         cmd_buf.submit_and_wait(queue)?;
         Ok(())
+    }
+
+    pub (crate) fn start_oneshot_internal<T>(
+        device: Rc<InnerDevice>,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+        cmd_fn: T,
+    ) -> Result<(Rc<CommandBuffer>, Rc<Fence>)>
+    where
+        T: FnMut(&mut BufferWriter) -> Result<()>
+    {
+        let mut cmd_buf = CommandBuffer::from_inner_device(
+            Rc::clone(&device),
+            vk::CommandBufferLevel::PRIMARY,
+            pool,
+            "temporary-oneshot-command-buffer",
+        )?;
+        cmd_buf.record(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT, cmd_fn)?;
+
+        let fence_name = "temporary-command-buffer-fence";
+        let fence = Rc::new(Fence::new_internal(&device, fence_name, false)?);
+
+        cmd_buf.submit_synced(
+            queue,
+            &[],
+            &[],
+            Some(Rc::clone(&fence)),
+        )?;
+
+        Ok((Rc::new(cmd_buf), fence))
     }
 }
 
