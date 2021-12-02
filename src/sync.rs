@@ -85,17 +85,21 @@ impl Fence {
         })
     }
 
-    pub fn wait(&self, timeout: u64) -> Result<()> {
+    /// Waits for the fence.  `timeout` is in seconds, and the return value
+    /// is true if the wait timed out, otherwise it is false.
+    pub fn wait(&self, timeout: u64) -> Result<bool> {
         let wait_fences = [self.fence];
-        unsafe {
-            Error::wrap_result(
-                self.device.device.wait_for_fences(
-                    &wait_fences,
-                    true,
-                    timeout,
-                ),
-                "Failed to wait for fence",
+        let result = unsafe {
+            self.device.device.wait_for_fences(
+                &wait_fences,
+                true,
+                timeout,
             )
+        };
+        match result {
+            Ok(_) => Ok(false),
+            Err(vk::Result::TIMEOUT) => Ok(true),
+            Err(e) => Err(Error::wrap(e, "Failed to wait for fence")),
         }
     }
 
@@ -106,7 +110,7 @@ impl Fence {
                 self.device.device.reset_fences(
                     &reset_fences,
                 ),
-                "Failed to wait for fence",
+                "Failed to reset fence",
             )
         }
     }
