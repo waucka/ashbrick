@@ -1143,6 +1143,12 @@ impl std::fmt::Display for QueueFamilyRef {
     }
 }
 
+impl From<QueueFamilyRef> for u32 {
+    fn from(family_ref: QueueFamilyRef) -> u32 {
+        family_ref.idx as u32
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct QueueFamily {
     idx: u32,
@@ -1189,6 +1195,12 @@ impl QueueFamily {
 
     pub fn can_do_sparse_binding(&self) -> bool {
         self.flags.contains(vk::QueueFlags::SPARSE_BINDING)
+    }
+}
+
+impl From<QueueFamily> for u32 {
+    fn from(family: QueueFamily) -> u32 {
+        family.idx as u32
     }
 }
 
