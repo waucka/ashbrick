@@ -178,7 +178,7 @@ impl Image {
         queue: &Queue,
     ) -> Result<()> {
         CommandBuffer::run_oneshot_internal(
-            self.device.clone(),
+            Rc::clone(&self.device),
             pool,
             queue,
             |writer| {
