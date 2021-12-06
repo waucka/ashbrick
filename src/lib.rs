@@ -316,10 +316,6 @@ impl DeviceBuilder {
         }
     }
 
-    pub fn get_extensions(&self) -> &[String] {
-        &self.extensions
-    }
-
     impl_defaulted_setter!(with_window_title, window_title, str);
     impl_defaulted_setter!(with_validation, validation_enabled, bool);
 
@@ -334,13 +330,20 @@ impl DeviceBuilder {
     }
 
     pub fn with_default_extensions(mut self) -> Self {
-        self.extensions.push("VK_KHR_swapchain".to_string());
+        self.extensions.push(ash::extensions::khr::Swapchain::name().to_str().unwrap().to_string());
         self.extensions.push("VK_EXT_descriptor_indexing".to_string());
         self
     }
 
     pub fn with_extension(mut self, extension_name: &str) -> Self {
         self.extensions.push(extension_name.to_string());
+        self
+    }
+
+    pub fn with_extension_cstr(mut self, extension_name: &std::ffi::CStr) -> Self {
+        // I'm unwrapping here, because if the extension name isn't valid UTF-8, then
+        // somebody needs a severe beating.
+        self.extensions.push(extension_name.to_str().unwrap().to_string());
         self
     }
 
@@ -554,6 +557,14 @@ impl Device {
             }
         )
     }
+
+    pub fn set_debug_object_name<T: Debuggable>(
+        &self,
+        obj: &T,
+        name: &str,
+    ) -> Result<()> {
+        self.inner.set_debug_object_name(obj, name)
+    }
 }
 
 pub enum MemoryUsage {
@@ -672,7 +683,7 @@ impl InnerDevice {
             &instance,
             &surface_loader,
             surface,
-            builder.get_extensions(),
+            &builder.extensions,
         )?;
         let memory_properties = unsafe {
             instance.get_physical_device_memory_properties(physical_device)
@@ -723,7 +734,7 @@ impl InnerDevice {
             &instance,
             physical_device,
             &queue_families,
-            builder.get_extensions(),
+            &builder.extensions,
             builder.features_chain,
         );
         let swapchain_loader = ash::extensions::khr::Swapchain::new(&instance, &device);
@@ -977,6 +988,32 @@ impl InnerDevice {
             self.swapchain_loader
                 .queue_present(queue.get(), present_info)
         }
+    }
+
+    fn set_debug_object_name<T: Debuggable>(
+        &self,
+        obj: &T,
+        name: &str,
+    ) -> Result<()> {
+        let object_type = T::get_type();
+        let object_handle = obj.get_handle();
+        let object_name_cstring = std::ffi::CString::new(name).unwrap();
+        let res = unsafe {
+            self.debug_utils_loader.debug_utils_set_object_name(
+                self.device.handle(),
+                &vk::DebugUtilsObjectNameInfoEXT{
+                    s_type: vk::StructureType::DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+                    p_next: ptr::null(),
+                    object_type,
+                    object_handle,
+                    p_object_name: object_name_cstring.as_ptr(),
+                },
+            )
+        };
+        Error::wrap_result(
+            res,
+            "Failed to set object debug name",
+        )
     }
 }
 
@@ -1247,4 +1284,9 @@ pub trait NamedResource {
 
 pub trait HasHandle {
     fn vk_handle(&self) -> u64;
+}
+
+pub trait Debuggable {
+    fn get_type() -> vk::ObjectType;
+    fn get_handle(&self) -> u64;
 }

@@ -12,7 +12,7 @@ use super::{Device, InnerDevice};
 
 use super::errors::{Error, Result};
 
-pub (crate) trait GenericShader {
+pub trait GenericShader {
     fn get_shader(&self) -> &Shader;
 }
 
@@ -22,6 +22,10 @@ pub struct Shader {
 }
 
 impl Shader {
+    pub fn as_vk(&self) -> vk::ShaderModule {
+        self.shader
+    }
+
     fn from_spv_file(device: Rc<InnerDevice>, spv_file: &Path) -> Result<Self> {
         let spv_bytes = Error::wrap_io(
             std::fs::read(spv_file),

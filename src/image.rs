@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::ptr;
 use std::os::raw::c_void;
 
-use super::{Device, InnerDevice, MemoryUsage, Queue};
+use super::{Device, InnerDevice, MemoryUsage, Queue, Debuggable, NamedResource};
 use super::command_buffer::{CommandBuffer, CommandPool};
 use super::buffer::UploadSourceBuffer;
 
@@ -76,7 +76,12 @@ pub struct Image {
     pub (crate) extent: vk::Extent3D,
     pub (crate) format: vk::Format,
     image_type: vk::ImageType,
+    // I'm not sure it will be worth it to try to keep this
+    // in sync with reality, given the various ways in which
+    // an image's layout can be transitioned automatically
+    // or by the user.
     pub (crate) layout: vk::ImageLayout,
+    name: String,
 }
 
 impl Image {
@@ -90,6 +95,7 @@ impl Image {
         extent: vk::Extent3D,
         format: vk::Format,
         image_type: vk::ImageType,
+        name: &str,
     ) -> Self {
         Self {
             device,
@@ -99,6 +105,7 @@ impl Image {
             format,
             image_type,
             layout: vk::ImageLayout::UNDEFINED,
+            name: String::from(name),
         }
     }
 
@@ -166,6 +173,7 @@ impl Image {
             format,
             image_type,
             layout: vk::ImageLayout::UNDEFINED,
+            name: builder.name,
         })
     }
 
@@ -404,6 +412,14 @@ impl Image {
         Ok(())
     }
 
+    pub fn get_extent(&self) -> vk::Extent3D {
+        self.extent
+    }
+
+    pub fn as_vk(&self) -> vk::Image {
+        self.img
+    }
+
     pub fn copy_buffer(
         buffer: Rc<UploadSourceBuffer>,
         dst_img: Rc<Image>,
@@ -458,6 +474,23 @@ impl Drop for Image {
                 Err(e) => error!("Failed to destroy image: {}", e),
             }
         }
+    }
+}
+
+impl NamedResource for Image {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Debuggable for Image {
+    fn get_type() -> vk::ObjectType {
+        vk::ObjectType::IMAGE
+    }
+
+    fn get_handle(&self) -> u64 {
+        use ash::vk::Handle;
+        self.img.as_raw()
     }
 }
 

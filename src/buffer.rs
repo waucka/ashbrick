@@ -15,7 +15,7 @@ use std::ptr;
 
 use super::errors::{Error, Result};
 
-use super::{Device, InnerDevice, MemoryUsage, Queue};
+use super::{Device, InnerDevice, MemoryUsage, Queue, Debuggable};
 use super::command_buffer::{CommandBuffer, CommandPool};
 
 pub trait HasBuffer {
@@ -334,6 +334,17 @@ impl Drop for Buffer {
             Ok(_) => (),
             Err(e) => error!("Failed to destroy buffer: {}", e),
         }
+    }
+}
+
+impl Debuggable for Buffer {
+    fn get_type() -> vk::ObjectType {
+        vk::ObjectType::BUFFER
+    }
+
+    fn get_handle(&self) -> u64 {
+        use ash::vk::Handle;
+        self.buf.as_raw()
     }
 }
 
