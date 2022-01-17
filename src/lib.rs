@@ -14,6 +14,7 @@ pub use winit;
 #[cfg(feature = "egui")]
 pub use egui;
 pub use log;
+pub use shaderc;
 
 use std::ptr;
 use std::cell::RefCell;

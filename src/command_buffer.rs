@@ -16,10 +16,11 @@ use super::{Device, InnerDevice, Queue, QueueFamilyRef, FrameId};
 use super::compute::ComputePipeline;
 use super::descriptor::DescriptorSet;
 use super::renderer::{Presenter, SwapchainImageRef, RenderPass, GraphicsPipeline, SubpassRef, RenderPassData};
-use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, HasBuffer};
+use super::buffer::{VertexBuffer, IndexBuffer, UploadSourceBuffer, DownloadDestinationBuffer, HasBuffer};
 use super::image::Image;
 use super::shader::Vertex;
 use super::sync::{Semaphore, Fence};
+use super::texture::Texture;
 
 use super::errors::{Error, Result};
 
@@ -764,6 +765,39 @@ impl BufferWriter {
         self.dependencies.push(image);
     }
 
+    /// Write a command that copies the contents of an `Image` to a `DownloadDestinationBuffer`
+    pub fn copy_image_to_buffer(
+        &mut self,
+        src_image: Rc<Image>,
+        dst_buffer: Rc<DownloadDestinationBuffer>,
+    ) {
+        let buffer_image_regions = [vk::BufferImageCopy{
+            image_subresource: vk::ImageSubresourceLayers{
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            },
+            image_extent: src_image.extent,
+            buffer_offset: 0,
+            buffer_image_height: 0,
+            buffer_row_length: 0,
+            image_offset: vk::Offset3D{ x: 0, y: 0, z: 0 },
+        }];
+
+        unsafe {
+            self.device.device.cmd_copy_image_to_buffer(
+                self.command_buffer,
+                src_image.img,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                dst_buffer.get_buffer(),
+                &buffer_image_regions,
+            );
+        }
+        self.dependencies.push(dst_buffer);
+        self.dependencies.push(src_image);
+    }
+
     pub (crate) unsafe fn copy_buffer_to_image_no_deps(
         &mut self,
         src_buffer: &UploadSourceBuffer,
@@ -790,6 +824,29 @@ impl BufferWriter {
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             &buffer_image_regions,
         );
+    }
+
+    /// Write a command that copies the contents of one texture to another
+    pub fn copy_texture(
+        &mut self,
+        src_texture: Rc<Texture>,
+        src_layout: vk::ImageLayout,
+        dst_texture: Rc<Texture>,
+        dst_layout: vk::ImageLayout,
+        copy_regions: &[vk::ImageCopy],
+    ) {
+        unsafe {
+            self.device.device.cmd_copy_image(
+                self.command_buffer,
+                src_texture.image.img,
+                src_layout,
+                dst_texture.image.img,
+                dst_layout,
+                &copy_regions,
+            );
+        }
+        self.dependencies.push(src_texture);
+        self.dependencies.push(dst_texture);
     }
 
     /// Write a command that blits one `Image` to another

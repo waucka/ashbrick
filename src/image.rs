@@ -11,7 +11,7 @@ use std::os::raw::c_void;
 
 use super::{Device, InnerDevice, MemoryUsage, Queue, Debuggable, NamedResource};
 use super::command_buffer::{CommandBuffer, CommandPool};
-use super::buffer::UploadSourceBuffer;
+use super::buffer::{UploadSourceBuffer, DownloadDestinationBuffer};
 
 use super::errors::{Error, Result};
 
@@ -439,6 +439,25 @@ impl Image {
             })
     }
 
+    pub fn copy_to_buffer(
+        src_img: Rc<Image>,
+        buffer: Rc<DownloadDestinationBuffer>,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+    ) -> Result<()> {
+        CommandBuffer::run_oneshot_internal(
+            Rc::clone(&src_img.device),
+            pool,
+            queue,
+            |writer| {
+                writer.copy_image_to_buffer(
+                    Rc::clone(&src_img),
+                    Rc::clone(&buffer),
+                );
+                Ok(())
+            })
+    }
+
     pub (crate) unsafe fn copy_buffer_no_deps(
         buffer: &UploadSourceBuffer,
         dst_img: &Image,
@@ -460,6 +479,12 @@ impl Image {
 
     pub fn get_layout(&self) -> vk::ImageLayout {
         self.layout
+    }
+
+    pub fn get_memory_requirements(&self) -> vk::MemoryRequirements {
+        unsafe {
+            self.device.device.get_image_memory_requirements(self.img)
+        }
     }
 }
 

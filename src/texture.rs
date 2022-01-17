@@ -16,7 +16,7 @@ use std::cmp::max;
 use super::{Device, InnerDevice, Queue};
 use super::command_buffer::CommandPool;
 use super::image::{Image, ImageView, ImageBuilder};
-use super::buffer::UploadSourceBuffer;
+use super::buffer::{UploadSourceBuffer, DownloadDestinationBuffer};
 
 use super::errors::{Error, Result};
 
@@ -517,6 +517,26 @@ impl Texture {
             mip_levels,
             name: String::from(name),
         })
+    }
+
+    /// Downloads the texture image to a buffer.  Do with it what you will.
+    pub fn download(
+        &self,
+        buffer: Rc<DownloadDestinationBuffer>,
+        pool: Rc<CommandPool>,
+        queue: &Queue,
+    ) -> Result<()> {
+        Image::copy_to_buffer(
+            Rc::clone(&self.image),
+            buffer,
+            pool,
+            queue,
+        )
+    }
+
+    /// Returns the image's size in bytes
+    pub fn get_image_size(&self) -> vk::DeviceSize {
+        self.image.get_memory_requirements().size
     }
 
     pub fn get_mip_levels(&self) -> u32 {

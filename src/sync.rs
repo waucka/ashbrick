@@ -85,7 +85,7 @@ impl Fence {
         })
     }
 
-    /// Waits for the fence.  `timeout` is in seconds, and the return value
+    /// Waits for the fence.  `timeout` is in nanoseconds, and the return value
     /// is true if the wait timed out, otherwise it is false.
     pub fn wait(&self, timeout: u64) -> Result<bool> {
         let wait_fences = [self.fence];
@@ -103,6 +103,24 @@ impl Fence {
         }
     }
 
+    /// Checks the status of the fence, without waiting.  Returns `true` if
+    /// the fence has completed.
+    pub fn has_completed(&self) -> Result<bool> {
+        let wait_fences = [self.fence];
+        let result = unsafe {
+            self.device.device.wait_for_fences(
+                &wait_fences,
+                true,
+                0,
+            )
+        };
+        match result {
+            Ok(_) => Ok(true),
+            Err(vk::Result::TIMEOUT) => Ok(false),
+            Err(e) => Err(Error::wrap(e, "Failed to check fence")),
+        }
+    }
+
     pub fn reset(&self) -> Result<()> {
         let reset_fences = [self.fence];
         unsafe {
@@ -112,6 +130,35 @@ impl Fence {
                 ),
                 "Failed to reset fence",
             )
+        }
+    }
+
+    /// Waits for multiple fences.  `timeout` is in nanoseconds, and the return value
+    /// is true if the wait timed out, otherwise it is false.  Waits for all fences if
+    /// `wait_all` is `true`, otherwise waits for any fence.
+    pub fn wait_multiple(
+        timeout: u64,
+        fences: &[&Self],
+        wait_all: bool,
+    ) -> Result<bool> {
+        if fences.is_empty() {
+            return Ok(false);
+        }
+        let mut wait_fences = Vec::with_capacity(fences.len());
+        for fence in fences {
+            wait_fences.push(fence.fence);
+        }
+        let result = unsafe {
+            fences[0].device.device.wait_for_fences(
+                &wait_fences,
+                wait_all,
+                timeout,
+            )
+        };
+        match result {
+            Ok(_) => Ok(false),
+            Err(vk::Result::TIMEOUT) => Ok(true),
+            Err(e) => Err(Error::wrap(e, "Failed to wait for fences")),
         }
     }
 }

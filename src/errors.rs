@@ -46,6 +46,8 @@ pub enum Error {
     QueueFamilyMismatch(QueueFamilyRef, QueueFamilyRef),
     InvalidQueueIndex(u32, u32),
     InvalidCommand(String),
+    UnsupportedFormat(vk::Format),
+    ShaderCompilationError(String),
 }
 
 impl Error {
@@ -154,6 +156,8 @@ impl Display for Error {
             QueueFamilyMismatch(queue_family, buffer_family) => write!(f, "Tried to submit a buffer for queue family {} on a queue from family {}", buffer_family.idx, queue_family.idx),
             InvalidQueueIndex(queue_idx, family_idx) => write!(f, "Invalid queue index {} for queue family {}", queue_idx, family_idx),
             InvalidCommand(msg) => write!(f, "{}", msg),
+            UnsupportedFormat(vk_format) => write!(f, "Format {:?} is not supported for this operation", vk_format),
+            ShaderCompilationError(msg) => write!(f, "Failed to compile shader: {}", msg),
         }
     }
 }

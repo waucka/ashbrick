@@ -12,6 +12,51 @@ use super::{Device, InnerDevice};
 
 use super::errors::{Error, Result};
 
+/// Compiles GLSL to SPIR-V v1.5 with the Vulkan 1.2 profile using shaderc
+pub fn compile_glsl(
+    source: &str,
+    kind: shaderc::ShaderKind,
+    file_name: &str,
+    entry_point: &str,
+) -> Result<Vec<u32>> {
+    let mut compiler = match shaderc::Compiler::new() {
+        Some(compiler) => compiler,
+        None => return Err(Error::ShaderCompilationError("Failed to load shaderc".to_string())),
+    };
+    let options = match shaderc::CompileOptions::new() {
+        Some(mut options) => {
+            options.set_target_env(
+                shaderc::TargetEnv::Vulkan,
+                shaderc::EnvVersion::Vulkan1_2 as u32,
+            );
+            options.set_target_spirv(
+                shaderc::SpirvVersion::V1_5,
+            );
+            options.set_source_language(
+                shaderc::SourceLanguage::GLSL,
+            );
+            options
+        },
+        None => {
+            return Err(Error::ShaderCompilationError("Failed to load shaderc options".to_string()));
+        },
+    };
+    let spirv_result = compiler.compile_into_spirv(
+        source,
+        kind,
+        file_name,
+        entry_point,
+        Some(&options),
+    );
+    let spirv = match spirv_result {
+        Ok(spirv) => spirv,
+        Err(e) => {
+            return Err(Error::ShaderCompilationError(format!("Failed to compile shader: {}", e)));
+        },
+    };
+    Ok(spirv.as_binary().to_vec())
+}
+
 pub trait GenericShader {
     fn get_shader(&self) -> &Shader;
 }
@@ -26,21 +71,21 @@ impl Shader {
         self.shader
     }
 
-    fn from_spv_file(device: Rc<InnerDevice>, spv_file: &Path) -> Result<Self> {
-        let spv_bytes = Error::wrap_io(
-            std::fs::read(spv_file),
-            &format!("Failed to read SPIR-V file {}", spv_file.display()),
+    fn from_file(device: Rc<InnerDevice>, file_path: &Path) -> Result<Self> {
+        let code_bytes = Error::wrap_io(
+            std::fs::read(file_path),
+            &format!("Failed to read file {}", file_path.display()),
         )?;
-        Shader::from_spv_bytes(device, spv_bytes)
+        Shader::from_bytes(device, &code_bytes)
     }
 
-    fn from_spv_bytes(device: Rc<InnerDevice>, spv_bytes: Vec<u8>) -> Result<Self> {
+    fn from_bytes(device: Rc<InnerDevice>, code_bytes: &[u8]) -> Result<Self> {
         let shader_module_create_info = vk::ShaderModuleCreateInfo{
             s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
             p_next: ptr::null(),
             flags: vk::ShaderModuleCreateFlags::empty(),
-            code_size: spv_bytes.len(),
-            p_code: spv_bytes.as_ptr() as *const u32,
+            code_size: code_bytes.len(),
+            p_code: code_bytes.as_ptr() as *const u32,
         };
 
         Ok(Self{
@@ -75,16 +120,16 @@ pub struct VertexShader<V> where V: Vertex {
 }
 
 impl<V> VertexShader<V> where V: Vertex {
-    pub fn from_spv_file(device: &Device, spv_file: &Path) -> Result<Self> {
+    pub fn from_file(device: &Device, file_path: &Path) -> Result<Self> {
         Ok(Self{
-            shader: Shader::from_spv_file(device.inner.clone(), spv_file)?,
+            shader: Shader::from_file(device.inner.clone(), file_path)?,
             _phantom: std::marker::PhantomData,
         })
     }
 
-    pub fn from_spv_bytes(device: &Device, spv_bytes: Vec<u8>) -> Result<Self> {
+    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Self> {
         Ok(Self {
-            shader: Shader::from_spv_bytes(device.inner.clone(), spv_bytes)?,
+            shader: Shader::from_bytes(device.inner.clone(), code_bytes)?,
             _phantom: std::marker::PhantomData,
         })
     }
@@ -92,7 +137,7 @@ impl<V> VertexShader<V> where V: Vertex {
     // This always returns true because your code won't compile
     // if the shader isn't compatible.
     pub fn is_compatible(&self, _vertices: &[V]) -> bool {
-        return true;
+        true
     }
 }
 
@@ -107,15 +152,15 @@ pub struct FragmentShader {
 }
 
 impl FragmentShader {
-    pub fn from_spv_file(device: &Device, spv_file: &Path) -> Result<Self> {
+    pub fn from_file(device: &Device, file_path: &Path) -> Result<Self> {
         Ok(Self{
-            shader: Shader::from_spv_file(device.inner.clone(), spv_file)?,
+            shader: Shader::from_file(device.inner.clone(), file_path)?,
         })
     }
 
-    pub fn from_spv_bytes(device: &Device, spv_bytes: Vec<u8>) -> Result<Self> {
+    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Self> {
         Ok(Self {
-            shader: Shader::from_spv_bytes(device.inner.clone(), spv_bytes)?
+            shader: Shader::from_bytes(device.inner.clone(), code_bytes)?
         })
     }
 }
@@ -131,15 +176,15 @@ pub struct ComputeShader {
 }
 
 impl ComputeShader {
-    pub fn from_spv_file(device: &Device, spv_file: &Path) -> Result<Self> {
+    pub fn from_file(device: &Device, file_path: &Path) -> Result<Self> {
         Ok(Self{
-            shader: Shader::from_spv_file(device.inner.clone(), spv_file)?,
+            shader: Shader::from_file(device.inner.clone(), file_path)?,
         })
     }
 
-    pub fn from_spv_bytes(device: &Device, spv_bytes: Vec<u8>) -> Result<Self> {
+    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Self> {
         Ok(Self {
-            shader: Shader::from_spv_bytes(device.inner.clone(), spv_bytes)?
+            shader: Shader::from_bytes(device.inner.clone(), code_bytes)?
         })
     }
 }

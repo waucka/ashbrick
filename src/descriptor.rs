@@ -12,6 +12,7 @@ use std::rc::Rc;
 use super::{Device, InnerDevice};
 use super::buffer::{UniformBuffer, ComplexUniformBuffer, StorageBuffer, HasBuffer};
 use super::texture::{Texture, Sampler};
+use super::image::ImageView;
 
 use super::errors::{Error, Result};
 
@@ -92,8 +93,8 @@ pub trait DescriptorRef {
     fn get_type(&self) -> vk::DescriptorType;
 }
 
-pub struct UniformBufferRef<T: AsStd140>
-{
+#[derive(Clone)]
+pub struct UniformBufferRef<T: AsStd140> {
     uniform_buffers: Vec<Rc<UniformBuffer<T>>>,
 }
 
@@ -130,6 +131,7 @@ impl<T: AsStd140> DescriptorRef for UniformBufferRef<T>
     }
 }
 
+#[derive(Clone)]
 pub struct ComplexUniformBufferRef<T: WriteStd140>
 {
     uniform_buffers: Vec<Rc<ComplexUniformBuffer<T>>>,
@@ -168,6 +170,7 @@ impl<T: WriteStd140> DescriptorRef for ComplexUniformBufferRef<T>
     }
 }
 
+#[derive(Clone)]
 pub struct StorageBufferRef {
     storage_buffers: Vec<Rc<StorageBuffer>>,
 }
@@ -203,6 +206,43 @@ impl DescriptorRef for StorageBufferRef {
     }
 }
 
+#[derive(Clone)]
+pub struct StorageImageRef {
+    storage_images: Vec<(Rc<ImageView>, vk::ImageLayout)>,
+}
+
+impl StorageImageRef {
+    pub fn new(storage_images: Vec<(Rc<ImageView>, vk::ImageLayout)>) -> Self {
+        Self{
+            storage_images,
+        }
+    }
+}
+
+impl DescriptorRef for StorageImageRef {
+    fn get_write(&self, dst_set: Rc<DescriptorSet>, dst_binding: u32) -> WriteDescriptorSet {
+        let mut storage_image_info = vec![];
+        for (img_view, layout) in self.storage_images.iter() {
+            storage_image_info.push(vk::DescriptorImageInfo{
+                sampler: vk::Sampler::null(),
+                image_view: img_view.view,
+                image_layout: *layout,
+            });
+        }
+        WriteDescriptorSet::for_images(
+            vk::DescriptorType::STORAGE_IMAGE,
+            storage_image_info,
+            dst_set,
+            dst_binding,
+        )
+    }
+
+    fn get_type(&self) -> vk::DescriptorType {
+        vk::DescriptorType::STORAGE_BUFFER
+    }
+}
+
+#[derive(Clone)]
 pub struct TextureRef {
     textures: Vec<Rc<Texture>>,
 }
@@ -238,6 +278,7 @@ impl DescriptorRef for TextureRef {
     }
 }
 
+#[derive(Clone)]
 pub struct CombinedRef {
     samplers: Vec<Rc<Sampler>>,
     textures: Vec<Rc<Texture>>,
@@ -290,6 +331,7 @@ impl DescriptorRef for CombinedRef {
     }
 }
 
+#[derive(Clone)]
 pub struct InputAttachmentRef {
     texture: Rc<Texture>,
     layout: vk::ImageLayout,

@@ -518,7 +518,7 @@ impl Swapchain {
 
         let mut frames = Vec::new();
         let mut frame_index: u32 = 0;
-        for swapchain_image in swapchain_images.iter() {
+        for (idx, swapchain_image) in swapchain_images.iter().enumerate() {
             let image = Image::from_vk_image(
                 device.clone(),
                 *swapchain_image,
@@ -529,6 +529,7 @@ impl Swapchain {
                 },
                 surface_format.format,
                 vk::ImageType::TYPE_2D,
+                &format!("swapchain-image-{}", idx),
             );
             let imageview = ImageView::from_image(
                 &image,
@@ -1141,6 +1142,8 @@ impl AttachmentDescription {
         format: vk::Format,
         is_multisampled: bool,
         usage: vk::ImageUsageFlags,
+        initial_layout: Option<vk::ImageLayout>,
+        final_layout: Option<vk::ImageLayout>,
     ) -> Self {
         Self{
             is_multisampled,
@@ -1151,8 +1154,14 @@ impl AttachmentDescription {
             store_op: vk::AttachmentStoreOp::STORE,
             stencil_load_op: vk::AttachmentLoadOp::DONT_CARE,
             stencil_store_op: vk::AttachmentStoreOp::DONT_CARE,
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            final_layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            initial_layout: match initial_layout {
+                Some(layout) => layout,
+                None => vk::ImageLayout::UNDEFINED,
+            },
+            final_layout: match final_layout {
+                Some(layout) => layout,
+                None => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            },
             clear_value: vk::ClearValue{
                 depth_stencil: vk::ClearDepthStencilValue{
                     depth: 1.0,
@@ -1372,7 +1381,7 @@ impl AttachmentInfoSet {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct AttachmentRef {
     idx: usize,
 }
@@ -1558,19 +1567,6 @@ impl RenderPass {
         }
     }
 
-    pub fn create_framebuffer(
-        &self,
-        width: u32,
-        height: u32,
-    ) -> Result<Framebuffer> {
-        Framebuffer::for_renderpass(
-            self,
-            width,
-            height,
-            self.msaa_samples,
-        )
-    }
-
     fn get_attachment_infos(&self, width: u32, height: u32) -> AttachmentInfoSet {
         let mut image_infos = vec![];
         let mut formats = vec![];
@@ -1652,6 +1648,7 @@ impl Framebuffer {
         width: u32,
         height: u32,
         msaa_samples: vk::SampleCountFlags,
+        framebuffer_generation: usize,
     ) -> Result<Self> {
         let framebuffer = Self::create(render_pass, width, height)?;
 
@@ -1663,6 +1660,7 @@ impl Framebuffer {
                 width,
                 height,
                 msaa_samples,
+                framebuffer_generation,
             )?,
         })
     }
@@ -1686,21 +1684,26 @@ impl Framebuffer {
         width: u32,
         height: u32,
         msaa_samples: vk::SampleCountFlags,
+        framebuffer_generation: usize,
     ) -> Result<Vec<PerFrameSet<Rc<Texture>>>> {
         info!("Generating new attachment textures for a {}x{} viewport", width, height);
         let mut textures = Vec::new();
         // Skip the first attachment in the list.  By convention, that one is the swapchain image.
         let att_slice = &render_pass.attachment_descriptions[1..];
         for (idx, att) in att_slice.iter().enumerate() {
-            let texture_name = format!("attachment-image-{}", idx);
             textures.push(PerFrameSet::new(
-                |_| {
+                |frame_id| {
+                    let texture_name = format!("attachment-image-{}-frame-{}-gen-{}", idx, frame_id, framebuffer_generation);
                     let image = Image::new_internal(
                         Rc::clone(&render_pass.device),
                         ImageBuilder::new2d(&texture_name, width as usize, height as usize)
                             .with_num_samples(msaa_samples)
                             .with_format(att.format)
                             .with_usage(att.usage),
+                    )?;
+                    render_pass.device.set_debug_object_name(
+                        &image,
+                        &texture_name,
                     )?;
                     let image_view = ImageView::from_image(
                         &image,
@@ -1733,21 +1736,43 @@ impl Drop for Framebuffer {
 pub struct RenderPassData {
     pub (crate) render_pass: RenderPass,
     pub (crate) framebuffer: Framebuffer,
+    framebuffer_generation: usize,
 }
 
 impl RenderPassData {
-    // TODO: I don't think this is the right API.  Should I conceal the Framebuffer?
-    //       Should RenderPass become an internal-focused class and RenderPassData
-    //       be renamed to RenderPass?  I'm not sure.
-    pub fn new(render_pass: RenderPass, framebuffer: Framebuffer) -> Self {
-        Self{
+    pub fn new(
+        render_pass: RenderPass,
+        width: u32,
+        height: u32,
+    ) -> Result<Self> {
+        let framebuffer_generation = 0;
+        let framebuffer = Framebuffer::for_renderpass(
+            &render_pass,
+            width,
+            height,
+            render_pass.msaa_samples,
+            framebuffer_generation,
+        )?;
+        Ok(Self{
             render_pass,
             framebuffer,
-        }
+            framebuffer_generation: 0,
+        })
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
-        let new_framebuffer = self.render_pass.create_framebuffer(width, height)?;
+    pub fn resize(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        self.framebuffer_generation += 1;
+        let new_framebuffer = Framebuffer::for_renderpass(
+            &self.render_pass,
+            width,
+            height,
+            self.render_pass.msaa_samples,
+            self.framebuffer_generation,
+        )?;
         self.framebuffer = new_framebuffer;
         Ok(())
     }

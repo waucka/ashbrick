@@ -414,9 +414,17 @@ impl DownloadDestinationBuffer {
         name: &str,
         size: vk::DeviceSize,
     ) -> Result<Self> {
+        Self::new_internal(Rc::clone(&device.inner), name, size)
+    }
+
+    pub (crate) fn new_internal(
+        device: Rc<InnerDevice>,
+        name: &str,
+        size: vk::DeviceSize,
+    ) -> Result<Self> {
         Ok(Self {
             buf: Rc::new(Buffer::new(
-                Rc::clone(&device.inner),
+                device,
                 name,
                 size,
                 vk::BufferUsageFlags::TRANSFER_DST,
