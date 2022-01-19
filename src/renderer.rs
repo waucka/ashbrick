@@ -18,7 +18,7 @@ use super::{Device, InnerDevice, Queue, QueueFamilyRef, FrameId, PerFrameSet};
 use super::image::{Image, ImageView, ImageBuilder};
 use super::texture::Texture;
 use super::sync::{Semaphore, Fence};
-use super::shader::{VertexShader, FragmentShader, Vertex, GenericShader};
+use super::shader::{VertexShader, FragmentShader, Vertex, GenericShader, SpecializationConstants};
 use super::descriptor::DescriptorSetLayout;
 use super::command_buffer::CommandBuffer;
 
@@ -597,6 +597,8 @@ pub struct GraphicsPipelineParameters {
     depth_compare_op: vk::CompareOp,
     subpass: SubpassRef,
     push_constants: Vec<vk::PushConstantRange>,
+    spec_constants_vertex: SpecializationConstants,
+    spec_constants_fragment: SpecializationConstants,
 }
 
 impl GraphicsPipelineParameters {
@@ -612,6 +614,8 @@ impl GraphicsPipelineParameters {
             depth_compare_op: vk::CompareOp::ALWAYS,
             subpass,
             push_constants: Vec::new(),
+            spec_constants_vertex: SpecializationConstants::new(),
+            spec_constants_fragment: SpecializationConstants::new(),
         }
     }
 
@@ -657,6 +661,36 @@ impl GraphicsPipelineParameters {
 
     pub fn with_push_constant(mut self, push_constant: vk::PushConstantRange) -> Self {
         self.push_constants.push(push_constant);
+        self
+    }
+
+    pub fn with_vertex_spec_constant_u32(mut self, constant_id: u32, value: u32) -> Self {
+        self.spec_constants_vertex.add_u32(constant_id, value);
+        self
+    }
+
+    pub fn with_vertex_spec_constant_i32(mut self, constant_id: u32, value: i32) -> Self {
+        self.spec_constants_vertex.add_i32(constant_id, value);
+        self
+    }
+
+    pub fn with_vertex_spec_constant_f32(mut self, constant_id: u32, value: f32) -> Self {
+        self.spec_constants_vertex.add_f32(constant_id, value);
+        self
+    }
+
+    pub fn with_fragment_spec_constant_u32(mut self, constant_id: u32, value: u32) -> Self {
+        self.spec_constants_fragment.add_u32(constant_id, value);
+        self
+    }
+
+    pub fn with_fragment_spec_constant_i32(mut self, constant_id: u32, value: i32) -> Self {
+        self.spec_constants_fragment.add_i32(constant_id, value);
+        self
+    }
+
+    pub fn with_fragment_spec_constant_f32(mut self, constant_id: u32, value: f32) -> Self {
+        self.spec_constants_fragment.add_f32(constant_id, value);
         self
     }
 }
@@ -782,6 +816,20 @@ where
     ) -> Result<vk::Pipeline> {
         let main_function_name = CString::new("main").unwrap();
 
+        let spec_info_vertex = params.spec_constants_vertex.to_vk();
+        let p_specialization_info_vertex = if spec_info_vertex.map_entry_count == 0 {
+            ptr::null()
+        } else {
+            &spec_info_vertex
+        };
+
+        let spec_info_fragment = params.spec_constants_fragment.to_vk();
+        let p_specialization_info_fragment = if spec_info_fragment.map_entry_count == 0 {
+            ptr::null()
+        } else {
+            &spec_info_fragment
+        };
+
         let shader_stages = [
             vk::PipelineShaderStageCreateInfo{
                 s_type: vk::StructureType::PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -789,7 +837,7 @@ where
                 flags: vk::PipelineShaderStageCreateFlags::empty(),
                 module: vert_shader_module,
                 p_name: main_function_name.as_ptr(),
-                p_specialization_info: ptr::null(),
+                p_specialization_info: p_specialization_info_vertex,
                 stage: vk::ShaderStageFlags::VERTEX,
             },
             vk::PipelineShaderStageCreateInfo{
@@ -798,7 +846,7 @@ where
                 flags: vk::PipelineShaderStageCreateFlags::empty(),
                 module: frag_shader_module,
                 p_name: main_function_name.as_ptr(),
-                p_specialization_info: ptr::null(),
+                p_specialization_info: p_specialization_info_fragment,
                 stage: vk::ShaderStageFlags::FRAGMENT,
             },
         ];

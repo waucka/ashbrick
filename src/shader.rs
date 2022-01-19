@@ -6,6 +6,7 @@ use ash::vk;
 
 use std::path::Path;
 use std::rc::Rc;
+use std::mem::size_of;
 use std::ptr;
 
 use super::{Device, InnerDevice};
@@ -192,5 +193,60 @@ impl ComputeShader {
 impl GenericShader for ComputeShader {
     fn get_shader(&self) -> &Shader {
         &self.shader
+    }
+}
+
+pub (crate) struct SpecializationConstants {
+    map: Vec<vk::SpecializationMapEntry>,
+    constants: Vec<u32>,
+}
+
+impl SpecializationConstants {
+    pub (crate) fn new() -> Self {
+        Self {
+            map: Vec::new(),
+            constants: Vec::new(),
+        }
+    }
+
+    pub (crate) fn add_u32(&mut self, constant_id: u32, value: u32) {
+        let idx = self.constants.len();
+        self.constants.push(value);
+        self.map.push(vk::SpecializationMapEntry{
+            constant_id,
+            offset: (idx * size_of::<u32>()) as u32,
+            size: size_of::<u32>(),
+        });
+    }
+
+    pub (crate) fn add_i32(&mut self, constant_id: u32, value: i32) {
+        let idx = self.constants.len();
+        self.constants.push(u32::from_le_bytes(value.to_le_bytes()));
+        self.map.push(vk::SpecializationMapEntry{
+            constant_id,
+            offset: (idx * size_of::<u32>()) as u32,
+            size: size_of::<i32>(),
+        });
+    }
+
+    pub (crate) fn add_f32(&mut self, constant_id: u32, value: f32) {
+        let idx = self.constants.len();
+        self.constants.push(value.to_bits());
+        self.map.push(vk::SpecializationMapEntry{
+            constant_id,
+            offset: (idx * size_of::<u32>()) as u32,
+            size: size_of::<f32>(),
+        });
+    }
+
+    pub (crate) fn to_vk(&self) -> vk::SpecializationInfo {
+        let map_entry_count = self.map.len() as u32;
+        let data_size = self.constants.len();
+        vk::SpecializationInfo{
+            map_entry_count,
+            p_map_entries: self.map.as_ptr() as *const vk::SpecializationMapEntry,
+            data_size,
+            p_data: self.constants.as_ptr() as *const std::ffi::c_void,
+        }
     }
 }

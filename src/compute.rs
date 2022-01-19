@@ -7,7 +7,7 @@ use ash::vk;
 use super::{Device, InnerDevice};
 use super::descriptor::DescriptorSetLayout;
 use super::errors::{Error, Result};
-use super::shader::{ComputeShader, GenericShader};
+use super::shader::{ComputeShader, GenericShader, SpecializationConstants};
 
 use std::cell::RefCell;
 use std::ffi::CString;
@@ -18,6 +18,7 @@ pub struct ComputePipelineParameters {
     shader: ComputeShader,
     set_layouts: Vec<Rc<DescriptorSetLayout>>,
     push_constants: Vec<vk::PushConstantRange>,
+    spec_constants: SpecializationConstants,
 }
 
 impl ComputePipelineParameters {
@@ -26,6 +27,7 @@ impl ComputePipelineParameters {
             shader,
             set_layouts: Vec::new(),
             push_constants: Vec::new(),
+            spec_constants: SpecializationConstants::new(),
         }
     }
 
@@ -36,6 +38,21 @@ impl ComputePipelineParameters {
 
     pub fn with_push_constant(mut self, push_constant: vk::PushConstantRange) -> Self {
         self.push_constants.push(push_constant);
+        self
+    }
+
+    pub fn with_spec_constant_u32(mut self, constant_id: u32, value: u32) -> Self {
+        self.spec_constants.add_u32(constant_id, value);
+        self
+    }
+
+    pub fn with_spec_constant_i32(mut self, constant_id: u32, value: i32) -> Self {
+        self.spec_constants.add_i32(constant_id, value);
+        self
+    }
+
+    pub fn with_spec_constant_f32(mut self, constant_id: u32, value: f32) -> Self {
+        self.spec_constants.add_f32(constant_id, value);
         self
     }
 }
@@ -56,12 +73,15 @@ impl ComputePipeline {
             shader,
             set_layouts,
             push_constants,
+            spec_constants,
         } = params;
 
         let mut vk_set_layouts = vec![];
         for layout in set_layouts.iter() {
             vk_set_layouts.push(layout.layout);
         }
+
+        let spec_info = spec_constants.to_vk();
 
         let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo{
             s_type: vk::StructureType::PIPELINE_LAYOUT_CREATE_INFO,
@@ -91,6 +111,11 @@ impl ComputePipeline {
                 device.clone(),
                 pipeline_layout,
                 shader_module,
+                if spec_info.map_entry_count == 0 {
+                    ptr::null()
+                } else {
+                    &spec_info
+                }
             );
             match result {
                 Ok(pipeline) => RefCell::new(pipeline),
@@ -125,6 +150,7 @@ impl ComputePipeline {
         device: Rc<InnerDevice>,
         pipeline_layout: vk::PipelineLayout,
         shader_module: vk::ShaderModule,
+        p_specialization_info: *const vk::SpecializationInfo,
     ) -> Result<vk::Pipeline> {
         let main_function_name = CString::new("main").unwrap();
 
@@ -138,7 +164,7 @@ impl ComputePipeline {
                 flags: vk::PipelineShaderStageCreateFlags::empty(),
                 module: shader_module,
                 p_name: main_function_name.as_ptr(),
-                p_specialization_info: ptr::null(),
+                p_specialization_info,
                 stage: vk::ShaderStageFlags::COMPUTE,
             },
             layout: pipeline_layout,
