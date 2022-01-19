@@ -121,18 +121,18 @@ pub struct VertexShader<V> where V: Vertex {
 }
 
 impl<V> VertexShader<V> where V: Vertex {
-    pub fn from_file(device: &Device, file_path: &Path) -> Result<Self> {
-        Ok(Self{
+    pub fn from_file(device: &Device, file_path: &Path) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self{
             shader: Shader::from_file(device.inner.clone(), file_path)?,
             _phantom: std::marker::PhantomData,
-        })
+        }))
     }
 
-    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Self> {
-        Ok(Self {
+    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self {
             shader: Shader::from_bytes(device.inner.clone(), code_bytes)?,
             _phantom: std::marker::PhantomData,
-        })
+        }))
     }
 
     // This always returns true because your code won't compile
@@ -153,16 +153,16 @@ pub struct FragmentShader {
 }
 
 impl FragmentShader {
-    pub fn from_file(device: &Device, file_path: &Path) -> Result<Self> {
-        Ok(Self{
+    pub fn from_file(device: &Device, file_path: &Path) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self{
             shader: Shader::from_file(device.inner.clone(), file_path)?,
-        })
+        }))
     }
 
-    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Self> {
-        Ok(Self {
+    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self {
             shader: Shader::from_bytes(device.inner.clone(), code_bytes)?
-        })
+        }))
     }
 }
 
@@ -177,16 +177,16 @@ pub struct ComputeShader {
 }
 
 impl ComputeShader {
-    pub fn from_file(device: &Device, file_path: &Path) -> Result<Self> {
-        Ok(Self{
+    pub fn from_file(device: &Device, file_path: &Path) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self{
             shader: Shader::from_file(device.inner.clone(), file_path)?,
-        })
+        }))
     }
 
-    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Self> {
-        Ok(Self {
+    pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self {
             shader: Shader::from_bytes(device.inner.clone(), code_bytes)?
-        })
+        }))
     }
 }
 

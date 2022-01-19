@@ -15,14 +15,14 @@ use std::rc::Rc;
 use std::ptr;
 
 pub struct ComputePipelineParameters {
-    shader: ComputeShader,
+    shader: Rc<ComputeShader>,
     set_layouts: Vec<Rc<DescriptorSetLayout>>,
     push_constants: Vec<vk::PushConstantRange>,
     spec_constants: SpecializationConstants,
 }
 
 impl ComputePipelineParameters {
-    pub fn new(shader: ComputeShader) -> Self {
+    pub fn new(shader: Rc<ComputeShader>) -> Self {
         Self{
             shader,
             set_layouts: Vec::new(),
@@ -61,7 +61,7 @@ pub struct ComputePipeline {
     device: Rc<InnerDevice>,
     pipeline_layout: vk::PipelineLayout,
     pub (crate) pipeline: RefCell<vk::Pipeline>,
-    _shader: ComputeShader,
+    _shader: Rc<ComputeShader>,
 }
 
 impl ComputePipeline {

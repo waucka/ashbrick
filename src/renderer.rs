@@ -702,8 +702,8 @@ where
     device: Rc<InnerDevice>,
     pipeline_layout: vk::PipelineLayout,
     pub (crate) pipeline: RefCell<vk::Pipeline>,
-    vert_shader: VertexShader<V>,
-    frag_shader: FragmentShader,
+    vert_shader: Rc<VertexShader<V>>,
+    frag_shader: Rc<FragmentShader>,
     params: GraphicsPipelineParameters,
 }
 
@@ -716,8 +716,8 @@ where
         viewport_width: usize,
         viewport_height: usize,
         render_pass: &RenderPass,
-        vert_shader: VertexShader<V>,
-        frag_shader: FragmentShader,
+        vert_shader: Rc<VertexShader<V>>,
+        frag_shader: Rc<FragmentShader>,
         set_layouts: &[Rc<DescriptorSetLayout>],
         params: GraphicsPipelineParameters,
     ) -> Result<Self> {
@@ -787,8 +787,8 @@ where
         viewport_width: usize,
         viewport_height: usize,
         render_pass: &RenderPass,
-        vert_shader: VertexShader<V>,
-        frag_shader: FragmentShader,
+        vert_shader: Rc<VertexShader<V>>,
+        frag_shader: Rc<FragmentShader>,
         set_layouts: &[Rc<DescriptorSetLayout>],
         params: GraphicsPipelineParameters,
     ) -> Result<Self> {
