@@ -359,6 +359,7 @@ impl DeviceBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct Device {
     inner: Rc<InnerDevice>,
 }
