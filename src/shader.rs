@@ -20,8 +20,8 @@ pub fn compile_glsl(
     kind: shaderc::ShaderKind,
     file_name: &str,
     entry_point: &str,
-    standard_includes: HashMap<String, String>,
-    relative_includes: HashMap<String, String>,
+    standard_includes: &HashMap<String, String>,
+    relative_includes: &HashMap<String, String>,
 ) -> Result<Vec<u32>> {
     let mut compiler = match shaderc::Compiler::new() {
         Some(compiler) => compiler,
@@ -41,8 +41,8 @@ pub fn compile_glsl(
             );
             options.set_include_callback(|include_source, include_type, _, _| {
                 let include_set = match include_type {
-                    shaderc::IncludeType::Standard => &standard_includes,
-                    shaderc::IncludeType::Relative => &relative_includes,
+                    shaderc::IncludeType::Standard => standard_includes,
+                    shaderc::IncludeType::Relative => relative_includes,
                 };
                 match include_set.get(include_source) {
                     Some(code) => Ok(shaderc::ResolvedInclude{
