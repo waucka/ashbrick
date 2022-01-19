@@ -97,12 +97,16 @@ impl Shader {
     }
 
     fn from_bytes(device: Rc<InnerDevice>, code_bytes: &[u8]) -> Result<Self> {
+        Self::from_ptr(device, code_bytes.len(), code_bytes.as_ptr() as *const u32)
+    }
+
+    fn from_ptr(device: Rc<InnerDevice>, code_size: usize, p_code: *const u32) -> Result<Self> {
         let shader_module_create_info = vk::ShaderModuleCreateInfo{
             s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
             p_next: ptr::null(),
             flags: vk::ShaderModuleCreateFlags::empty(),
-            code_size: code_bytes.len(),
-            p_code: code_bytes.as_ptr() as *const u32,
+            code_size,
+            p_code,
         };
 
         Ok(Self{
@@ -151,6 +155,17 @@ impl<V> VertexShader<V> where V: Vertex {
         }))
     }
 
+    pub fn from_u32_slice(device: &Device, code: &[u32]) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self {
+            shader: Shader::from_ptr(
+                device.inner.clone(),
+                code.len() * size_of::<u32>(),
+                code.as_ptr(),
+            )?,
+            _phantom: std::marker::PhantomData,
+        }))
+    }
+
     // This always returns true because your code won't compile
     // if the shader isn't compatible.
     pub fn is_compatible(&self, _vertices: &[V]) -> bool {
@@ -180,6 +195,16 @@ impl FragmentShader {
             shader: Shader::from_bytes(device.inner.clone(), code_bytes)?
         }))
     }
+
+    pub fn from_u32_slice(device: &Device, code: &[u32]) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self {
+            shader: Shader::from_ptr(
+                device.inner.clone(),
+                code.len() * size_of::<u32>(),
+                code.as_ptr(),
+            )?,
+        }))
+    }
 }
 
 impl GenericShader for FragmentShader {
@@ -202,6 +227,16 @@ impl ComputeShader {
     pub fn from_bytes(device: &Device, code_bytes: &[u8]) -> Result<Rc<Self>> {
         Ok(Rc::new(Self {
             shader: Shader::from_bytes(device.inner.clone(), code_bytes)?
+        }))
+    }
+
+    pub fn from_u32_slice(device: &Device, code: &[u32]) -> Result<Rc<Self>> {
+        Ok(Rc::new(Self {
+            shader: Shader::from_ptr(
+                device.inner.clone(),
+                code.len() * size_of::<u32>(),
+                code.as_ptr(),
+            )?,
         }))
     }
 }
